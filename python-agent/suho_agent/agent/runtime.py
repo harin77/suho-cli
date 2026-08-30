@@ -58,7 +58,7 @@ class AgentRuntime:
             self._active_loop.cancel()
 
     async def run(self) -> None:
-        """Main event loop — read messages and dispatch."""
+        """Main event loop — read stdin and dispatch concurrently."""
         log.info("AgentRuntime ready, waiting for messages")
 
         while not self._shutdown_requested:
@@ -67,12 +67,12 @@ class AgentRuntime:
                 log.info("stdin closed, shutting down")
                 break
 
-            # Check if it's a response to a pending request
+            # Route response messages (tool_result, permission_decision) immediately
             if self.bridge.dispatch_response(msg):
                 continue
 
-            # Dispatch to appropriate handler
-            await self._dispatch(msg)
+            # Route task requests and queries concurrently so stdin remains unblocked
+            asyncio.create_task(self._dispatch(msg))
 
         log.info("AgentRuntime exiting")
 
