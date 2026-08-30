@@ -42,7 +42,7 @@ impl AgentBridge {
             .args(&args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit()) // Python logs go to our stderr
+            .stderr(Stdio::piped()) // Pipe Python stderr to prevent terminal bleeding
             .kill_on_drop(true)
             .spawn()
             .with_context(|| format!("Failed to spawn Python agent: {} {:?}", cmd, args))?;
@@ -55,6 +55,18 @@ impl AgentBridge {
             .stdout
             .take()
             .ok_or_else(|| anyhow::anyhow!("Failed to get agent stdout"))?;
+        let stderr = child.stderr.take();
+
+        // Background reader for Python stderr -> tracing debug
+        if let Some(stderr_stream) = stderr {
+            tokio::spawn(async move {
+                use tokio::io::AsyncBufReadExt;
+                let mut reader = tokio::io::BufReader::new(stderr_stream).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    tracing::debug!(target: "python_agent", "{}", line);
+                }
+            });
+        }
 
         // Channel: background reader → bridge consumer
         let (tx, rx) = mpsc::channel::<AgentMessage>(256);

@@ -1,4 +1,4 @@
-# SUHO Agent 🤖⚡
+# SUHO Agent
 
 **Terminal-first, autonomous AI agent ecosystem built for software engineers, Linux sysadmins, and AI developers.**
 
@@ -18,16 +18,16 @@ Working directory: D:\workspace\suho-cli
 
 ---
 
-## 🚀 Quick Start — Windows Installation
+## Quick Start — Windows Installation
 
 ### Option 1: Pre-Compiled Release (Fastest)
 
-1. **Download**: Download [`suho-v0.2.0-windows-x64.zip`](https://github.com/harin77/suho-cli/releases/download/v0.2.0/suho-v0.2.0-windows-x64.zip) from [GitHub Releases](https://github.com/harin77/suho-cli/releases/tag/v0.2.0).
-2. **Extract**: Right-click `.zip` → **Extract All...**.
-3. **Install**: Double-click **`install.bat`** inside the extracted folder.
-   - *Installs `suho.exe` to `%USERPROFILE%\.suho\bin`*
-   - *Adds install path to User `PATH`*
-   - *Creates default configuration at `%USERPROFILE%\.config\suho\config.toml`*
+1. **Download**: Download `suho-v0.2.0-windows-x64.zip` from [GitHub Releases](https://github.com/harin77/suho-cli/releases/tag/v0.2.0).
+2. **Extract**: Right-click `.zip` -> **Extract All...**.
+3. **Install**: Double-click `install.bat` inside the extracted folder.
+   - Installs `suho.exe` to `%USERPROFILE%\.suho\bin`
+   - Adds install path to User `PATH`
+   - Creates default configuration at `%USERPROFILE%\.config\suho\config.toml`
 4. **Open Terminal**: Open a **NEW** PowerShell window and test:
    ```powershell
    # If running in current window without opening a new one, run this first:
@@ -39,7 +39,7 @@ Working directory: D:\workspace\suho-cli
 
 ---
 
-## 🎮 Interactive CLI Guide
+## Interactive CLI Guide
 
 Enter interactive CLI mode by running:
 
@@ -55,7 +55,7 @@ Inside `suho chat`, start commands with `/`:
 
 | Command | Description |
 |:---|:---|
-| **`/models`** | Open interactive menu to select LLM provider (Ollama, OpenAI, Anthropic, Groq, DeepSeek, OpenRouter, Together, Gemini, LM Studio), enter API key, save to config, and list all available models! |
+| **`/models`** | Open interactive menu to select LLM provider (Ollama, OpenAI, Anthropic, Groq, DeepSeek, OpenRouter, Together, Gemini, LM Studio), enter API key, save to config, and list all available models |
 | **`/help`** | Display detailed interactive help menu, supported providers, and CLI options |
 | **`/tools`** | List all 30+ built-in developer tools and their availability status |
 | **`/history`** | Show recent task execution history |
@@ -65,7 +65,7 @@ Inside `suho chat`, start commands with `/`:
 
 ---
 
-## 🌐 Supported LLM Providers
+## Supported LLM Providers
 
 SUHO Agent supports 9+ cloud and local LLM providers out-of-the-box:
 
@@ -83,11 +83,11 @@ SUHO Agent supports 9+ cloud and local LLM providers out-of-the-box:
 
 ### Setting up a Provider
 
-Simply run **`/models`** inside `suho chat` to select your provider, type your API key (if required), and click save. The settings are saved automatically to `~/.config/suho/config.toml`.
+Simply run `/models` inside `suho chat` to select your provider, type your API key (if required), and click save. The settings are saved automatically to `~/.config/suho/config.toml`.
 
 ---
 
-## 🛠️ CLI Subcommands Overview
+## CLI Subcommands Overview
 
 Run these commands directly from your terminal outside interactive mode:
 
@@ -122,12 +122,12 @@ suho resume
 
 ---
 
-## 🏗️ Architecture & Security
+## Architecture & Security
 
 SUHO Agent uses a strict **two-tier architecture**:
 
 ```text
-USER → Rust CLI/TUI → [IPC] → Python Agent Runtime
+USER -> Rust CLI/TUI -> [IPC] -> Python Agent Runtime
                                   ├── Context Manager
                                   ├── Planner (LLM)
                                   ├── LLM Router
@@ -149,7 +149,7 @@ USER → Rust CLI/TUI → [IPC] → Python Agent Runtime
 
 ---
 
-## 🔧 Building from Source
+## Building from Source
 
 ### Prerequisites
 - **Rust 1.80+**: `rustup`
@@ -177,13 +177,13 @@ cp configs/default.toml ~/.config/suho/config.toml
 
 ---
 
-## 📜 License
+## License
 
 Distributed under the **MIT License**. See [LICENSE](LICENSE) for details.
 
 ---
 
-## 🙌 Credits & Acknowledgments
+## Credits & Acknowledgments
 
 - **Core Maintainer & Lead Architect**: **Harin & SUHO AI Team** ([@harin77](https://github.com/harin77))
 - **Built With**:

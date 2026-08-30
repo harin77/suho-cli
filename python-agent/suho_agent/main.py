@@ -38,7 +38,7 @@ async def async_main() -> None:
     configure_logging(config.logging.level)
 
     log = structlog.get_logger(__name__)
-    log.info("SUHO Agent starting", version="0.1.0")
+    log.info("SUHO Agent starting", version="0.2.0")
 
     bridge = IPCBridge(sys.stdin, sys.stdout)
     runtime = AgentRuntime(config=config, bridge=bridge)
