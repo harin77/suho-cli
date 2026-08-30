@@ -159,6 +159,26 @@ class OpenAICompatProvider(LLMProvider):
             return False
 
     async def list_models(self) -> list[ModelInfo]:
+        base_url_str = str(self._client.base_url)
+        if "generativelanguage.googleapis.com" in base_url_str:
+            import httpx
+            api_key = self._client.api_key
+            url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    r = await client.get(url)
+                    if r.status_code == 200:
+                        data = r.json()
+                        models = []
+                        for m in data.get("models", []):
+                            raw_name = m.get("name", "").replace("models/", "")
+                            if raw_name:
+                                models.append(ModelInfo(name=raw_name, provider="gemini", available=True))
+                        if models:
+                            return models
+            except Exception as e:
+                log.warning("Failed to fetch live Gemini models from Google API", error=str(e))
+
         try:
             resp = await self._client.models.list()
             return [
