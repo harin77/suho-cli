@@ -134,9 +134,25 @@ class AgentLoop:
                     return
                 continue
 
-            # Feed observation back into state
-            self.state.add_observation(observation.to_llm_context())
+            # Feed observation back into state and conversation history
+            obs_text = observation.to_llm_context()
+            self.state.add_observation(obs_text)
             self._update_state_from_observation(observation)
+
+            self.state.conversation_history.append({
+                "role": "assistant",
+                "content": f"Executed tool '{tool_name}' with args {tool_args}",
+            })
+            self.state.conversation_history.append({
+                "role": "user",
+                "content": f"Tool '{tool_name}' result: {obs_text}",
+            })
+
+            # Advance plan step if active
+            if self.state.plan and self.state.plan.current_step:
+                if observation.success:
+                    self.state.plan.current_step.completed = True
+                    self.state.plan.current_step_index += 1
 
             # Check if we should replan
             if observation.requires_followup and not observation.success:
