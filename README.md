@@ -38,6 +38,8 @@ Working directory: D:\workspace\suho-cli
    suho chat
    ```
 
+To uninstall SUHO Agent, double-click `uninstall.bat` inside the extracted folder.
+
 ---
 
 ## Interactive CLI Guide
