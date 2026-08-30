@@ -135,11 +135,10 @@ class OpenAICompatProvider(LLMProvider):
                 output_tokens=resp.usage.completion_tokens if resp.usage else 0,
             )
 
-        # No tool call — task complete or pure text response
+        # No tool call — task complete or conversational text
         if message.content:
-            # Check if it's a completion signal
-            content_lower = message.content.lower()
-            if any(kw in content_lower for kw in ["task complete", "finished", "done"]):
+            content_strip = message.content.strip()
+            if "<task_complete>" in content_strip or "[TASK_COMPLETE]" in content_strip or '{"tool": "__complete__"' in content_strip:
                 return ToolCallResponse(
                     tool="__complete__",
                     args={},
@@ -148,6 +147,15 @@ class OpenAICompatProvider(LLMProvider):
                     input_tokens=resp.usage.prompt_tokens if resp.usage else 0,
                     output_tokens=resp.usage.completion_tokens if resp.usage else 0,
                 )
+
+            return ToolCallResponse(
+                tool="",
+                args={},
+                content=message.content,
+                reasoning=reasoning,
+                input_tokens=resp.usage.prompt_tokens if resp.usage else 0,
+                output_tokens=resp.usage.completion_tokens if resp.usage else 0,
+            )
 
         return None
 

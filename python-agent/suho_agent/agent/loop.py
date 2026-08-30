@@ -120,6 +120,11 @@ class AgentLoop:
             if tool_name in ("__complete__", "complete"):
                 break
 
+            if not tool_name:
+                if hasattr(action, "content") and action.content:
+                    self.state.add_observation(f"Assistant notes: {action.content}")
+                continue
+
             observation = await self._execute_action(tool_name, tool_args, description)
 
             if observation is None:
