@@ -105,13 +105,12 @@ class AgentLoop:
                 # LLM says task is complete
                 break
 
-            if action.get("type") == "complete":
-                break
+            tool_name = action.tool if hasattr(action, "tool") else action.get("tool", "")
+            tool_args = action.args if hasattr(action, "args") else action.get("args", {})
+            description = (action.content if hasattr(action, "content") else action.get("description")) or f"Execute {tool_name}"
 
-            # Execute the selected tool
-            tool_name = action.get("tool", "")
-            tool_args = action.get("args", {})
-            description = action.get("description", f"Execute {tool_name}")
+            if tool_name in ("__complete__", "complete"):
+                break
 
             observation = await self._execute_action(tool_name, tool_args, description)
 
