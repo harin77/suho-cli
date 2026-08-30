@@ -237,16 +237,23 @@ impl AgentBridge {
             }
         }
 
+        // Check user home installation directory (~/.suho/python-agent)
+        if let Some(home) = dirs::home_dir() {
+            let user_agent_dir = home.join(".suho").join("python-agent");
+            if user_agent_dir.join("pyproject.toml").exists() || user_agent_dir.join("suho_agent").exists() {
+                return Ok(user_agent_dir);
+            }
+        }
+
         // Relative to binary
         if let Ok(exe) = std::env::current_exe() {
-            // suho binary is at <root>/target/release/suho
-            // python-agent is at <root>/python-agent/
             let candidates = [
+                exe.parent().map(|p| p.join("python-agent")),
                 exe.parent().and_then(|p| p.parent()).map(|p| p.join("python-agent")),
                 exe.parent().and_then(|p| p.parent()).and_then(|p| p.parent()).map(|p| p.join("python-agent")),
             ];
             for c in candidates.iter().flatten() {
-                if c.join("pyproject.toml").exists() {
+                if c.join("pyproject.toml").exists() || c.join("suho_agent").exists() {
                     return Ok(c.clone());
                 }
             }
@@ -254,12 +261,12 @@ impl AgentBridge {
 
         // CWD relative
         let cwd_candidate = std::env::current_dir()?.join("python-agent");
-        if cwd_candidate.join("pyproject.toml").exists() {
+        if cwd_candidate.join("pyproject.toml").exists() || cwd_candidate.join("suho_agent").exists() {
             return Ok(cwd_candidate);
         }
 
         Err(anyhow::anyhow!(
-            "Cannot find python-agent directory. Set [agent] python_agent_dir in config."
+            "Cannot find python-agent directory. Set [agent] python_agent_dir in config or run install.bat."
         ))
     }
 }
