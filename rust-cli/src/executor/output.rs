@@ -1,7 +1,5 @@
 //! Output capture — limits, truncates, and redacts output from tools.
 
-use std::collections::HashMap;
-
 /// Patterns used for secret redaction
 const SECRET_PATTERNS: &[(&str, &str)] = &[
     // OpenAI / Anthropic API keys

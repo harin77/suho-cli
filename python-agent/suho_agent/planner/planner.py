@@ -13,12 +13,13 @@ from suho_agent.models.base import LLMProvider
 
 log = structlog.get_logger(__name__)
 
-PLANNER_SYSTEM_PROMPT = """You are SUHO Agent Planner. Your job is to create a structured execution plan for a development task.
+PLANNER_SYSTEM_PROMPT = """You are SUHO Agent Planner. Your job is to create a focused, highly efficient execution plan for a development task.
 
-Given a task, analyze it and create a step-by-step plan. Each step should:
-- Be specific and actionable
-- Reference the appropriate tool to use
-- Indicate the risk level (SAFE, MODERATE, DANGEROUS, CRITICAL)
+CRITICAL PLANNING RULES:
+1. Fast Execution: Keep plans minimal. For simple single-file tasks or minor tweaks, generate a 1 to 2 step plan max (e.g. 1. Create file, 2. Complete).
+2. Direct Action: Do NOT add separate workspace listing, folder listing, or file read-back steps for simple file writes unless specifically required.
+3. Explicit Directory Creation: If a task explicitly asks to create a directory or folder, include a dedicated step using filesystem.create_directory or terminal.execute.
+4. No Over-Planning: Do NOT add unnecessary inspection or post-write read steps for simple creation requests.
 
 Return your plan as a JSON array:
 ```json
@@ -34,7 +35,7 @@ Return your plan as a JSON array:
 ```
 
 Available tools:
-- filesystem.read_file, filesystem.write_file, filesystem.edit_file, filesystem.list_directory, filesystem.search_files
+- filesystem.read_file, filesystem.write_file, filesystem.edit_file, filesystem.list_directory, filesystem.search_files, filesystem.create_directory
 - terminal.execute (for running commands)
 - git.status, git.diff, git.add, git.commit, git.push
 - development.flutter_analyze, development.flutter_test, development.flutter_build
@@ -43,7 +44,7 @@ Available tools:
 - development.npm_install, development.npm_run, development.npm_test
 - system.system_info, system.disk_usage, system.memory_usage
 
-Keep plans focused and practical. Maximum 15 steps. Prefer SAFE read operations before MODERATE write operations."""
+Keep plans minimal, precise, and fast."""
 
 
 class Planner:
@@ -63,6 +64,8 @@ class Planner:
         working_directory: str,
         replan: bool = False,
         previous_observations: Optional[list[str]] = None,
+        bridge: Optional[Any] = None,
+        task_id: Optional[str] = None,
     ) -> Plan:
         """Generate or update a plan for the given task."""
         messages = self._build_messages(
@@ -74,8 +77,30 @@ class Planner:
         )
 
         try:
-            response = await self._llm.generate(messages=messages, temperature=0.1)
-            steps = self._parse_plan(response.content)
+            if bridge and task_id:
+                from suho_agent.ipc.protocol import ThinkingMessage
+                full_content = ""
+                line_buffer = ""
+                async for chunk in self._llm.stream(messages=messages, temperature=0.1):
+                    full_content += chunk
+                    line_buffer += chunk
+                    if "\n" in line_buffer:
+                        lines = line_buffer.split("\n")
+                        for l in lines[:-1]:
+                            l_str = l.strip()
+                            if l_str and not l_str.startswith("[") and not l_str.startswith("]") and not l_str.startswith("{") and not l_str.startswith("}"):
+                                clean_line = re.sub(r"[\"\{\}\[\],]", "", l_str).strip()
+                                if clean_line:
+                                    await bridge.send(ThinkingMessage(task_id=task_id, content=clean_line))
+                        line_buffer = lines[-1]
+                steps = self._parse_plan(full_content)
+            else:
+                response = await self._llm.generate(messages=messages, temperature=0.1)
+                steps = self._parse_plan(response.content)
+
+            if not steps:
+                return self._fallback_plan(task, working_directory)
+
             log.info("Plan created", steps=len(steps), replan=replan)
             return Plan(steps=steps)
         except Exception as e:
@@ -121,6 +146,7 @@ class Planner:
                             index=s.get("index", i + 1),
                             description=s.get("description", "Unknown step"),
                             tool=s.get("tool"),
+                            args=s.get("args", {}) if isinstance(s.get("args"), dict) else {},
                             rationale=s.get("rationale"),
                             risk_level=s.get("risk_level", "SAFE"),
                         )

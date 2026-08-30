@@ -77,9 +77,11 @@ class PolicyEngine:
                 level="DANGEROUS",
                 allowed=False,
                 reasons=path_errors,
+                requires_prompt=True,
                 blocking_reason=path_errors[0] if path_errors else "Path validation failed",
             )
-        reasons.extend(path_errors)  # warnings
+        if path_errors:
+            reasons.extend(path_errors)
 
         # ── Layer 3: Command Parser ────────────────────────────────────────
         cmd_level, cmd_reasons = self._command_parser.analyze(args)

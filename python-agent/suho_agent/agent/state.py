@@ -41,6 +41,7 @@ class PlanStep(BaseModel):
     index: int
     description: str
     tool: Optional[str] = None
+    args: dict[str, Any] = Field(default_factory=dict)
     rationale: Optional[str] = None
     risk_level: str = "SAFE"
     completed: bool = False
@@ -66,10 +67,12 @@ class Plan(BaseModel):
 class TokenUsage(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
+    total_tokens: int = 0
 
-    @property
-    def total_tokens(self) -> int:
-        return self.input_tokens + self.output_tokens
+    def add(self, inp: int, out: int) -> None:
+        self.input_tokens += inp
+        self.output_tokens += out
+        self.total_tokens = self.input_tokens + self.output_tokens
 
 
 class TaskState(BaseModel):

@@ -47,10 +47,10 @@ fn print_header() {
 fn status_icon(status: &TaskStatus) -> &'static str {
     match status {
         TaskStatus::Pending => "○",
-        TaskStatus::Planning => "🧠",
-        TaskStatus::Executing => "⚡",
-        TaskStatus::WaitingForApproval => "⚠️ ",
-        TaskStatus::Verifying => "🔍",
+        TaskStatus::Planning => "○",
+        TaskStatus::Executing => "→",
+        TaskStatus::WaitingForApproval => "!",
+        TaskStatus::Verifying => "?",
         TaskStatus::Failed => "✗",
         TaskStatus::Completed => "✓",
         TaskStatus::Cancelled => "⊘",
@@ -63,11 +63,17 @@ pub async fn run_simple_interactive(
     cwd: std::path::PathBuf,
     initial_message: Option<String>,
 ) -> Result<()> {
-    print_header();
-    println!("{}Interactive mode — type your request. Ctrl+C to exit.{}", DIM, RESET);
-    println!("{}Working directory: {}{}\n", DIM, cwd.display(), RESET);
+    let config = Config::load(None).await.unwrap_or_default();
+    let renderer = crate::tui::renderer::CliRenderer::new(
+        if config.ui.json { crate::tui::renderer::OutputMode::Json }
+        else if config.ui.plain { crate::tui::renderer::OutputMode::Plain }
+        else if config.ui.debug { crate::tui::renderer::OutputMode::Debug }
+        else { crate::tui::renderer::OutputMode::HumanUI },
+        config.ui.no_color,
+        config.ui.no_banner,
+    );
+    renderer.render_header("0.2.0", &cwd);
 
-    let config = bridge_config_placeholder();
     let gate = SecurityGate::new(&config);
     let executor = ProcessExecutor::new(config.security.max_file_read_bytes);
 
@@ -200,6 +206,21 @@ async fn handle_task(
     request: String,
     task_id: String,
 ) -> Result<()> {
+    let title = if request.len() > 45 {
+        format!("{}...", &request[..45])
+    } else {
+        request.clone()
+    };
+    let now = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
+    Config::save_conversation(crate::config::SavedConversation {
+        id: task_id.clone(),
+        title,
+        cwd: cwd.to_string_lossy().to_string(),
+        model: config.model.model.clone(),
+        timestamp: now,
+        initial_request: request.clone(),
+    });
+
     let msg = CliMessage::TaskRequest {
         id: task_id.clone(),
         request,
@@ -219,24 +240,38 @@ async fn process_messages(
     executor: &ProcessExecutor,
     config: &Config,
     cwd: &std::path::Path,
-    task_id: &str,
+    _task_id: &str,
 ) -> Result<()> {
-    let timeout = std::time::Duration::from_secs(config.agent.timeout_secs);
+    let timeout = std::time::Duration::from_secs(config.agent.timeout_secs.max(600));
+    let mut retries = 0;
 
     loop {
         match bridge.recv_timeout(timeout).await {
             Ok(Some(msg)) => {
+                retries = 0;
                 let done = handle_agent_message(bridge, gate, executor, config, cwd, msg).await?;
                 if done {
                     break;
                 }
             }
             Ok(None) => {
+                if retries < 3 {
+                    retries += 1;
+                    println!("\n{}~ Connection lost. Reconnecting (attempt {}/3)...{}", YELLOW, retries, RESET);
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    continue;
+                }
                 println!("\n{}Agent disconnected.{}", YELLOW, RESET);
                 break;
             }
             Err(_) => {
-                println!("\n{}{}Timeout waiting for agent response.{}", RED, BOLD, RESET);
+                if retries < 3 {
+                    retries += 1;
+                    println!("\n{}~ Response timeout. Reconnecting (attempt {}/3)...{}", YELLOW, retries, RESET);
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    continue;
+                }
+                println!("\n{}{}Task failed: Connection timeout after retries.{}", RED, BOLD, RESET);
                 break;
             }
         }
@@ -256,8 +291,10 @@ async fn handle_agent_message(
 ) -> Result<bool> {
     match msg {
         AgentMessage::StatusUpdate { status, message, step, .. } => {
-            let icon = status_icon(&status);
-            println!("{} {}{}{}  {}", icon, DIM, step.as_deref().unwrap_or(""), RESET, message);
+            if config.ui.debug || !message.starts_with("Iteration ") {
+                let icon = status_icon(&status);
+                println!("{} {}{}{}  {}", icon, DIM, step.as_deref().unwrap_or(""), RESET, message);
+            }
             Ok(false)
         }
 
@@ -268,16 +305,21 @@ async fn handle_agent_message(
         }
 
         AgentMessage::Thinking { content, .. } => {
-            println!("\n{}🧠 Thinking Mode:{}", BOLD, CYAN);
-            for line in content.lines() {
-                println!("  {}{}{}", DIM, line, RESET);
+            // Suppress raw internal chain-of-thought in standard mode
+            if config.ui.debug {
+                println!("\n{}Thinking Mode:{}", BOLD, CYAN);
+                for line in content.lines() {
+                    println!("  {}{}{}", DIM, line, RESET);
+                }
+                let _ = io::stdout().flush();
             }
-            let _ = io::stdout().flush();
             Ok(false)
         }
 
         AgentMessage::ToolStarted { tool, description, .. } => {
-            println!("\n{}  ⚡ {}{}  {}", CYAN, tool, RESET, description);
+            if config.ui.debug {
+                println!("\n{}  → {}{}  {}", CYAN, tool, RESET, description);
+            }
             Ok(false)
         }
 
@@ -289,6 +331,17 @@ async fn handle_agent_message(
             description,
             ..
         } => {
+            let renderer = crate::tui::renderer::CliRenderer::new(
+                if config.ui.json { crate::tui::renderer::OutputMode::Json }
+                else if config.ui.plain { crate::tui::renderer::OutputMode::Plain }
+                else if config.ui.debug { crate::tui::renderer::OutputMode::Debug }
+                else { crate::tui::renderer::OutputMode::HumanUI },
+                config.ui.no_color,
+                config.ui.no_banner,
+            );
+
+            renderer.render_tool_start(&tool, &description, &args);
+
             // ── SecurityGate: final allow/deny decision ──────────────────
             let command_preview = args.get("command").and_then(|v| v.as_str()).map(|s| s.to_string());
 
@@ -311,15 +364,9 @@ async fn handle_agent_message(
 
                     // Show brief result
                     if result.success {
-                        println!("  {}✓{} {} ({}ms)", GREEN, RESET, tool, result.duration_ms);
+                        renderer.render_tool_success(&tool, result.duration_ms, "");
                     } else {
-                        println!("  {}✗{} {} failed (exit {})",
-                            RED, RESET, tool,
-                            result.exit_code.unwrap_or(-1));
-                        if !result.stderr.is_empty() {
-                            let preview: String = result.stderr.lines().take(3).collect::<Vec<_>>().join("\n");
-                            println!("{}    {}{}", DIM, preview, RESET);
-                        }
+                        renderer.render_tool_failure(&tool, result.exit_code, &result.stderr);
                     }
                 }
 
@@ -347,6 +394,12 @@ async fn handle_agent_message(
                             let result = execute_tool(executor, &tool, &args, &constraints, cwd, config).await?;
                             let response = executor.to_tool_result(&result, &id);
                             bridge.send(&response).await?;
+
+                            if result.success {
+                                renderer.render_tool_success(&tool, result.duration_ms, "");
+                            } else {
+                                renderer.render_tool_failure(&tool, result.exit_code, &result.stderr);
+                            }
                         }
                     }
                 }
@@ -377,59 +430,61 @@ async fn handle_agent_message(
             Ok(false)
         }
 
-        AgentMessage::TaskComplete { summary, files_changed, tool_calls, token_usage, duration_ms, .. } => {
-            println!("\n{}{}✓ Task Complete{}", BOLD, GREEN, RESET);
-            println!("{}", summary);
-
-            if !files_changed.is_empty() {
-                println!("\n{}Changed files:{}", BOLD, RESET);
-                for f in &files_changed {
-                    println!("  • {}", f.path);
-                }
-            }
-
-            println!(
-                "\n{}Tool calls:{} {}  {}Tokens:{} {}  {}Time:{} {}ms{}",
-                DIM, RESET, tool_calls,
-                DIM, RESET, token_usage.total_tokens,
-                DIM, RESET, duration_ms,
-                RESET
+        AgentMessage::TaskComplete { summary, files_changed, tool_calls: _, token_usage: _, duration_ms, .. } => {
+            let renderer = crate::tui::renderer::CliRenderer::new(
+                if config.ui.json { crate::tui::renderer::OutputMode::Json }
+                else if config.ui.plain { crate::tui::renderer::OutputMode::Plain }
+                else if config.ui.debug { crate::tui::renderer::OutputMode::Debug }
+                else { crate::tui::renderer::OutputMode::HumanUI },
+                config.ui.no_color,
+                config.ui.no_banner,
             );
 
+            renderer.render_completion(&summary, duration_ms, &files_changed);
             Ok(true)
         }
 
         AgentMessage::TaskFailed { error, suggestion, .. } => {
-            println!("\n{}{}✗ Task Failed{}", BOLD, RED, RESET);
+            println!("\n{}{}✗ Task failed{}", BOLD, RED, RESET);
             println!("{}", error);
             if let Some(s) = suggestion {
-                println!("\n{}Suggestion:{} {}", BOLD, RESET, s);
+                println!("\n{}Suggested action:{} {}", BOLD, RESET, s);
             }
             Ok(true)
         }
 
         AgentMessage::PlanGenerated { steps, .. } => {
-            println!("\n{}{}Plan:{}", BOLD, CYAN, RESET);
-            for step in &steps {
-                let risk = match step.risk_level {
-                    PolicyLevel::Safe => format!("{}safe{}", GREEN, RESET),
-                    PolicyLevel::Moderate => format!("{}moderate{}", YELLOW, RESET),
-                    PolicyLevel::Dangerous => format!("{}dangerous{}", RED, RESET),
-                    PolicyLevel::Critical => format!("{}CRITICAL{}", RED, RESET),
-                };
-                println!("  {}{}. {} [{}]{}",
-                    DIM, step.index, step.description, risk, RESET);
+            let renderer = crate::tui::renderer::CliRenderer::new(
+                if config.ui.json { crate::tui::renderer::OutputMode::Json }
+                else if config.ui.plain { crate::tui::renderer::OutputMode::Plain }
+                else if config.ui.debug { crate::tui::renderer::OutputMode::Debug }
+                else { crate::tui::renderer::OutputMode::HumanUI },
+                config.ui.no_color,
+                config.ui.no_banner,
+            );
+
+            renderer.render_plan(&steps);
+
+            print!("{}Proceed with plan? [Y/n]: {}", BOLD, RESET);
+            io::stdout().flush()?;
+            let mut input = String::new();
+            if io::stdin().read_line(&mut input).is_ok() {
+                let trimmed = input.trim().to_lowercase();
+                if trimmed == "n" || trimmed == "no" {
+                    println!("  {}Plan cancelled by user.{}", RED, RESET);
+                    return Ok(true);
+                }
             }
-            Ok(true)
+            Ok(false)
         }
 
         AgentMessage::Info { message, .. } => {
-            println!("  {}ℹ  {}{}", DIM, message, RESET);
+            println!("  {}i  {}{}", DIM, message, RESET);
             Ok(false)
         }
 
         AgentMessage::AgentError { error, recoverable, .. } => {
-            println!("  {}⚠  Agent error: {}{}", YELLOW, error, RESET);
+            println!("  {}!  Agent error: {}{}", YELLOW, error, RESET);
             if !recoverable {
                 return Ok(true);
             }
@@ -487,6 +542,16 @@ async fn execute_tool(
             executor.read_file(path, config.security.max_file_read_bytes).await
         }
 
+        "filesystem.create_directory" | "filesystem.mkdir" | "filesystem.create_dir" => {
+            let raw_path = args.get("path").and_then(|v| v.as_str()).or_else(|| args.get("directory").and_then(|v| v.as_str())).unwrap_or("");
+            let command = if cfg!(target_os = "windows") {
+                format!("mkdir \"{}\"", raw_path)
+            } else {
+                format!("mkdir -p \"{}\"", raw_path)
+            };
+            executor.execute_command(&command, Some(cwd.to_str().unwrap_or(".")), None, constraints.timeout_ms, &sandbox_cfg).await
+        }
+
         "filesystem.write_file" | "filesystem.create_file" | "filesystem.edit_file" | "filesystem.write" | "filesystem.create" => {
             let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
             let content = args.get("content").and_then(|v| v.as_str()).unwrap_or("");
@@ -504,36 +569,83 @@ async fn execute_tool(
         }
 
         "filesystem.list_directory" | "filesystem.list_dir" => {
-            let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
-            let command = if cfg!(target_os = "windows") {
-                format!("dir /b \"{}\"", path)
+            let raw_path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+            let path = raw_path.trim_end_matches(&['/', '\\'][..]);
+            let path_clean = if path.is_empty() { "." } else { path };
+
+            let target_path = if std::path::Path::new(path_clean).is_absolute() {
+                std::path::PathBuf::from(path_clean)
             } else {
-                format!("ls -la \"{}\"", path)
+                cwd.join(path_clean)
             };
-            executor.execute_command(&command, Some(cwd.to_str().unwrap_or(".")), None, constraints.timeout_ms, &sandbox_cfg).await
+
+            if !target_path.exists() {
+                return Ok(crate::executor::process::ExecutionResult {
+                    success: false,
+                    exit_code: Some(1),
+                    stdout: String::new(),
+                    stderr: format!("Directory does not exist: {}", target_path.display()),
+                    duration_ms: 0,
+                    secrets_redacted: 0,
+                    truncated: false,
+                });
+            }
+
+            let (target_cwd, target_cmd) = if cfg!(target_os = "windows") {
+                if target_path.is_absolute() {
+                    (Some(target_path.to_str().unwrap_or(".")), "dir /b .".to_string())
+                } else if path_clean == "." {
+                    (Some(cwd.to_str().unwrap_or(".")), "dir /b .".to_string())
+                } else {
+                    (Some(cwd.to_str().unwrap_or(".")), format!("dir /b \"{}\"", path_clean))
+                }
+            } else {
+                if target_path.is_absolute() {
+                    (Some(target_path.to_str().unwrap_or(".")), "ls -la .".to_string())
+                } else {
+                    (Some(cwd.to_str().unwrap_or(".")), format!("ls -la \"{}\"", path_clean))
+                }
+            };
+            executor.execute_command(&target_cmd, target_cwd, None, constraints.timeout_ms, &sandbox_cfg).await
         }
 
         "filesystem.find_files" => {
-            let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+            let raw_path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+            let path = raw_path.trim_end_matches(&['/', '\\'][..]);
+            let path_clean = if path.is_empty() { "." } else { path };
             let pattern = args.get("pattern").and_then(|v| v.as_str()).unwrap_or("*");
             let command = if cfg!(target_os = "windows") {
-                format!("dir /b /s \"{}\\{}\"", path, pattern)
+                format!("dir /b /s \"{}\\{}\"", path_clean, pattern)
             } else {
-                format!("find \"{}\" -name \"{}\"", path, pattern)
+                format!("find \"{}\" -name \"{}\"", path_clean, pattern)
             };
             executor.execute_command(&command, Some(cwd.to_str().unwrap_or(".")), None, constraints.timeout_ms, &sandbox_cfg).await
         }
 
         "filesystem.search_files" => {
-            let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+            let raw_path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+            let path = raw_path.trim_end_matches(&['/', '\\'][..]);
+            let path_clean = if path.is_empty() { "." } else { path };
             let pattern = args.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
             let file_pattern = args.get("file_pattern").and_then(|v| v.as_str()).unwrap_or("*");
             let command = if cfg!(target_os = "windows") {
-                format!("findstr /s /i /n \"{}\" \"{}\\{}\"", pattern, path, file_pattern)
+                format!("findstr /s /i /n \"{}\" \"{}\\{}\"", pattern, path_clean, file_pattern)
             } else {
-                format!("grep -rn \"{}\" \"{}\"", pattern, path)
+                format!("grep -rn \"{}\" \"{}\"", pattern, path_clean)
             };
             executor.execute_command(&command, Some(cwd.to_str().unwrap_or(".")), None, constraints.timeout_ms, &sandbox_cfg).await
+        }
+
+        "system.system_info" | "system.info" | "sys.info" => {
+            let command = if cfg!(target_os = "windows") { "systeminfo" } else { "uname -a" };
+            executor.execute_command(command, Some(cwd.to_str().unwrap_or(".")), None, constraints.timeout_ms, &sandbox_cfg).await
+        }
+
+        tool if tool.starts_with("git.") => {
+            let sub = tool.trim_start_matches("git.");
+            let sub_arg = args.get("args").and_then(|v| v.as_str()).unwrap_or("");
+            let command = format!("git {} {}", sub, sub_arg);
+            executor.execute_command(command.trim(), Some(cwd.to_str().unwrap_or(".")), None, constraints.timeout_ms, &sandbox_cfg).await
         }
 
         "filesystem.move_file" => {
@@ -609,6 +721,58 @@ pub async fn handle_slash_command(bridge: &mut AgentBridge, cmd: &str) -> Result
             Ok(true)
         }
 
+        "/chatlist" | "/chats" | "/cl" => {
+            let list = Config::load_conversations();
+            if list.is_empty() {
+                println!("\n{}No saved conversations found.{}", YELLOW, RESET);
+            } else {
+                println!("\n{}{}╔════ Saved Conversations ═════════════════════════════════════╗{}", BOLD, CYAN, RESET);
+                for (idx, item) in list.iter().enumerate() {
+                    println!("  {}[{}] {}{}", BOLD, idx + 1, item.title, RESET);
+                    println!("      {}Workspace: {}{}", DIM, item.cwd, RESET);
+                    println!("      {}Date: {} | Model: {} | ID: {}{}\n", DIM, item.timestamp, item.model, item.id, RESET);
+                }
+                println!("{}Type /selectchat <number> to jump back to any conversation.{}\n", DIM, RESET);
+            }
+            Ok(true)
+        }
+
+        "/selectchat" | "/resume" => {
+            let parts: Vec<&str> = cmd.split_whitespace().collect();
+            let list = Config::load_conversations();
+            if list.is_empty() {
+                println!("\n{}No saved conversations found.{}", YELLOW, RESET);
+                return Ok(true);
+            }
+
+            if parts.len() < 2 {
+                println!("\n{}Usage: /selectchat <number|id>{}", YELLOW, RESET);
+                println!("Example: /selectchat 1\n");
+                return Ok(true);
+            }
+
+            let target = parts[1];
+            let selected = if let Ok(num) = target.parse::<usize>() {
+                if num >= 1 && num <= list.len() {
+                    Some(&list[num - 1])
+                } else {
+                    None
+                }
+            } else {
+                list.iter().find(|item| item.id.starts_with(target))
+            };
+
+            if let Some(conv) = selected {
+                println!("\n{}✓ Loaded Conversation: \"{}\"{}", GREEN, conv.title, RESET);
+                println!("  {}Workspace: {}{}", DIM, conv.cwd, RESET);
+                println!("  {}Model: {} | ID: {}{}", DIM, conv.model, conv.id, RESET);
+                println!("{}Resumed conversation session! Type your next prompt below.{}\n", BOLD, RESET);
+            } else {
+                println!("\n{}Invalid conversation index or ID. Type /chatlist to see available conversations.{}", RED, RESET);
+            }
+            Ok(true)
+        }
+
         "/status" | "/s" => {
             bridge.send(&CliMessage::Status).await?;
             if let Some(AgentMessage::QueryResponse { data, .. }) = bridge.recv_timeout(std::time::Duration::from_secs(10)).await? {
@@ -631,10 +795,11 @@ pub async fn handle_slash_command(bridge: &mut AgentBridge, cmd: &str) -> Result
 
 fn print_slash_help() {
     println!("\n{}{}╔════ SUHO Agent — Interactive Slash Commands ═══════════╗{}", BOLD, CYAN, RESET);
+    println!("  {}/chatlist{}    — Show all saved conversations with project title", BOLD, RESET);
+    println!("  {}/selectchat{}  — Switch back to previous conversation by index/ID", BOLD, RESET);
     println!("  {}/models{}      — Select LLM Provider & enter API key", BOLD, RESET);
     println!("  {}/selectmodel{} — Pick active LLM model for current provider", BOLD, RESET);
     println!("  {}/tools{}       — List all 30+ built-in tools and availability", BOLD, RESET);
-    println!("  {}/history{}     — Show recent task history", BOLD, RESET);
     println!("  {}/status{}      — Show agent runtime status & active model", BOLD, RESET);
     println!("  {}/clear{}       — Clear the terminal screen", BOLD, RESET);
     println!("  {}/help{}        — Show this help menu", BOLD, RESET);

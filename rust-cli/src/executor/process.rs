@@ -9,7 +9,6 @@ use tokio::process::Command;
 
 use crate::executor::output::OutputCapture;
 use crate::ipc::protocol::CliMessage;
-use crate::security::gate::{ExecutionConstraints, GateDecision};
 use crate::security::sandbox::SandboxConfig;
 
 /// The result of executing a tool request

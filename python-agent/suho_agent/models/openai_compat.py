@@ -55,34 +55,44 @@ class OpenAICompatProvider(LLMProvider):
         if max_tokens:
             kwargs["max_tokens"] = max_tokens
 
-        try:
-            resp = await self._client.chat.completions.create(**kwargs)
-            choice = resp.choices[0]
-            return LLMResponse(
-                content=choice.message.content or "",
-                input_tokens=resp.usage.prompt_tokens if resp.usage else 0,
-                output_tokens=resp.usage.completion_tokens if resp.usage else 0,
-                finish_reason=choice.finish_reason,
-            )
-        except (APIConnectionError, APIStatusError) as e:
-            log.error("OpenAI-compat request failed", error=str(e))
-            raise
+        import asyncio
+        last_error = None
+        for attempt in range(5):
+            try:
+                resp = await self._client.chat.completions.create(**kwargs)
+                choice = resp.choices[0]
+                return LLMResponse(
+                    content=choice.message.content or "",
+                    input_tokens=resp.usage.prompt_tokens if resp.usage else 0,
+                    output_tokens=resp.usage.completion_tokens if resp.usage else 0,
+                    finish_reason=choice.finish_reason,
+                )
+            except Exception as e:
+                last_error = e
+                log.warning("LLM request retry", attempt=attempt + 1, max_attempts=5, error=str(e))
+                if attempt < 4:
+                    await asyncio.sleep(2 * (attempt + 1))
+        raise last_error or RuntimeError("OpenAI-compat generate failed")
 
     async def stream(
         self,
         messages: list[dict[str, Any]],
         temperature: float = 0.1,
     ) -> AsyncIterator[str]:
-        stream = await self._client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=temperature,
-            stream=True,
-        )
-        async for chunk in stream:
-            delta = chunk.choices[0].delta
-            if delta.content:
-                yield delta.content
+        try:
+            stream = await self._client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=temperature,
+                stream=True,
+            )
+            async for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        except Exception as e:
+            log.warning("Stream request failed, falling back", error=str(e))
+            resp = await self.generate(messages, temperature=temperature)
+            yield resp.content
 
     async def tool_call(
         self,

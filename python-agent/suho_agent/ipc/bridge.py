@@ -38,7 +38,9 @@ class IPCBridge:
         """Send a message to the Rust CLI."""
         async with self._send_lock:
             data = msg.model_dump(mode="json")
-            line = json.dumps(data) + "\n"
+            raw_json = json.dumps(data, ensure_ascii=False)
+            clean_json = raw_json.encode("utf-8", errors="replace").decode("utf-8")
+            line = clean_json + "\n"
             self._stdout.write(line)
             self._stdout.flush()
 

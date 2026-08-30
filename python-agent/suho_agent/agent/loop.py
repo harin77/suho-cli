@@ -71,6 +71,23 @@ class AgentLoop:
             await self._run_ask_only()
             return
 
+        # ── Fast Path Detection for Simple Tasks ───────────────────────────
+        fast_path_action = _try_detect_fast_path(self.state.user_request, self.state.working_directory)
+        if fast_path_action:
+            log.info("Fast path detected for simple task", action=fast_path_action)
+            self.state.iteration_count = 1
+            await self._emit_status(TaskStatus.EXECUTING, "Executing direct task...")
+
+            obs = await self._execute_action(
+                fast_path_action["tool"],
+                fast_path_action["args"],
+                fast_path_action["description"],
+            )
+            if obs and obs.success:
+                self.state.status = TaskStatus.COMPLETED
+                await self._complete()
+                return
+
         # ── Main agent loop ────────────────────────────────────────────────
         await self._emit_status(TaskStatus.PLANNING, "Analyzing task and creating plan...")
 
@@ -117,7 +134,9 @@ class AgentLoop:
             tool_args = action.args if hasattr(action, "args") else action.get("args", {})
             description = (action.content if hasattr(action, "content") else action.get("description")) or f"Execute {tool_name}"
 
-            if tool_name in ("__complete__", "complete"):
+            if tool_name.lower() in ("__complete__", "complete", "finish", "completed", "done", "task_complete"):
+                log.info("Agent completion signal received", tool=tool_name)
+                self.state.status = TaskStatus.COMPLETED
                 break
 
             if not tool_name:
@@ -154,6 +173,12 @@ class AgentLoop:
                     self.state.plan.current_step.completed = True
                     self.state.plan.current_step_index += 1
 
+            # Deterministic Plan Completion Guard
+            if self.state.plan and (self.state.plan.is_complete or self.state.plan.current_step_index >= len(self.state.plan.steps)):
+                log.info("All plan steps completed deterministically", task_id=self.state.task_id)
+                self.state.status = TaskStatus.COMPLETED
+                break
+
             # Check if we should replan
             if observation.requires_followup and not observation.success:
                 if self.state.retry_count < self.state.max_retries:
@@ -165,12 +190,12 @@ class AgentLoop:
                         log.warning("Replan failed", error=str(e))
 
         # ── Verification ──────────────────────────────────────────────────
-        if not self._cancelled and self.state.files_changed:
+        if not self._cancelled and self.state.status != TaskStatus.COMPLETED and self.state.files_changed:
             await self._emit_status(TaskStatus.VERIFYING, "Verifying changes...")
             await self._verify()
 
         # ── Completion ────────────────────────────────────────────────────
-        if not self._cancelled:
+        if not self._cancelled and self.state.status != TaskStatus.FAILED:
             await self._complete()
 
     # ─── Phase implementations ────────────────────────────────────────────────
@@ -233,6 +258,8 @@ class AgentLoop:
             working_directory=self.state.working_directory,
             replan=replan,
             previous_observations=self.state.observations[-10:] if replan else [],
+            bridge=self.bridge,
+            task_id=self.state.task_id,
         )
 
         return plan_data
@@ -337,6 +364,7 @@ class AgentLoop:
     async def _complete(self) -> None:
         """Send task completion message."""
         from suho_agent.ipc.protocol import TaskCompleteMessage
+        self.state.status = TaskStatus.COMPLETED
 
         # Generate summary using LLM if needed
         summary = self._generate_summary()
@@ -396,14 +424,48 @@ class AgentLoop:
                 self.state.add_error(e)
 
     def _generate_summary(self) -> str:
-        summary_parts = [f"Successfully completed: {self.state.user_request}"]
+        summary_parts = [f"Task completed: {self.state.user_request}"]
+        import os
+
         if self.state.files_changed:
-            summary_parts.append(
-                f"Updated {len(self.state.files_changed)} file(s): "
-                + ", ".join(f.path for f in self.state.files_changed[:5])
-            )
+            summary_parts.append("\n📁 Files Created / Modified:")
+            created_dirs = set()
+            for fc in self.state.files_changed:
+                line_count = 0
+                full_p = os.path.join(self.state.working_directory, fc.path) if not os.path.isabs(fc.path) else fc.path
+                if os.path.exists(full_p):
+                    try:
+                        with open(full_p, "r", encoding="utf-8", errors="ignore") as f:
+                            line_count = len(f.readlines())
+                    except Exception:
+                        pass
+                summary_parts.append(f"  • {fc.path} (+{line_count} lines)")
+
+                dirname = os.path.dirname(fc.path)
+                if dirname and dirname != ".":
+                    top = dirname.replace("\\", "/").split("/")[0]
+                    created_dirs.add(top)
+
+            if created_dirs:
+                summary_parts.append("\n🌳 Project Structure:")
+                for top in sorted(created_dirs):
+                    summary_parts.append(f"  {top}/")
+                    top_full = os.path.join(self.state.working_directory, top)
+                    if os.path.exists(top_full) and os.path.isdir(top_full):
+                        for root, dirs, files in os.walk(top_full):
+                            rel = os.path.relpath(root, top_full)
+                            indent = "    " if rel == "." else "    " + "  " * rel.count(os.sep)
+                            for file in sorted(files):
+                                fpath = os.path.join(root, file)
+                                try:
+                                    with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
+                                        lines = len(f.readlines())
+                                except Exception:
+                                    lines = 0
+                                summary_parts.append(f"{indent}├── {file} ({lines} lines)")
+
         summary_parts.append(
-            f"Executed in {self.state.iteration_count} iteration(s) using {self.state.tool_call_count} tool call(s)."
+            f"\n→ Executed in {self.state.iteration_count} iteration(s) using {self.state.tool_call_count} tool call(s) ({self.state.duration_ms}ms)."
         )
         return "\n".join(summary_parts)
 
@@ -500,3 +562,63 @@ class AgentLoop:
             self._memory = MemoryStore(self.config.get_db_path())
             await self._memory.initialize()
         return self._memory
+
+
+KNOWN_FILES_NO_EXT = {"dockerfile", "makefile", "license", "readme", ".gitignore", ".env", ".env.example", "cargo.lock", "package.json"}
+KNOWN_FILE_EXTENSIONS = {
+    "txt", "html", "htm", "css", "js", "ts", "jsx", "tsx", "json", "py", "rs", "dart",
+    "cpp", "c", "h", "hpp", "java", "kt", "go", "rb", "php", "md", "yaml", "yml", "toml",
+    "xml", "sh", "bat", "ps1", "sql", "env", "lock"
+}
+
+
+def _try_detect_fast_path(request: str, cwd: str) -> Optional[dict]:
+    """
+    Detect trivial direct operations (creating simple files/folders) to bypass
+    heavy planning and extra LLM iterations.
+    """
+    import re
+    req_lower = request.strip().lower()
+
+    # Pattern 1: Explicit Directory creation (MUST contain folder, directory, or mkdir)
+    # e.g., "create a folder called test-folder", "create directory assets", "mkdir src"
+    explicit_folder_match = re.match(
+        r"^(?:mkdir|make\s+(?:a\s+)?directory|create\s+(?:a\s+)?(?:folder|directory))\s*(?:called|named)?\s*[\"']?([a-zA-Z0-9_\-\./\\]+)[\"']?$",
+        req_lower
+    )
+    if explicit_folder_match:
+        folder_name = explicit_folder_match.group(1).strip()
+        if folder_name and folder_name not in ("a", "the", "folder", "directory"):
+            return {
+                "tool": "filesystem.create_directory",
+                "args": {"path": folder_name},
+                "description": f"Create directory '{folder_name}'"
+            }
+
+    # Pattern 2: Explicit or Extension-based File creation
+    # e.g., "create hello.txt", "create styles.css inside test-app", "touch index.html", "create file main.py"
+    file_match = re.match(
+        r"^(?:create|make|touch|write)\s+(?:a\s+)?(?:file)?\s*[\"']?([a-zA-Z0-9_\-\./\\]+)[\"']?\s*(?:inside|in)?\s*[\"']?([a-zA-Z0-9_\-\./\\]+)?[\"']?$",
+        req_lower
+    )
+    if file_match:
+        target_name = file_match.group(1).strip()
+        parent_dir = file_match.group(2).strip() if file_match.group(2) else ""
+
+        if target_name and target_name not in ("a", "the", "file", "folder", "directory"):
+            is_explicit_file_word = "file" in req_lower or "touch" in req_lower or "write" in req_lower
+            has_extension = "." in target_name and not target_name.startswith(".") and len(target_name.split(".")[-1]) >= 1
+            has_known_extension = has_extension and target_name.split(".")[-1].lower() in KNOWN_FILE_EXTENSIONS
+            is_dotfile = target_name.startswith(".")
+            is_known_no_ext = target_name.lower() in KNOWN_FILES_NO_EXT
+
+            if is_explicit_file_word or has_known_extension or is_dotfile or is_known_no_ext:
+                file_path = f"{parent_dir}/{target_name}" if parent_dir else target_name
+                return {
+                    "tool": "filesystem.write_file",
+                    "args": {"path": file_path, "content": ""},
+                    "description": f"Write file '{file_path}'"
+                }
+
+    # Ambiguous requests (e.g. "create test-folder") return None and safely use LLM Planner!
+    return None

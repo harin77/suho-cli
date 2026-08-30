@@ -36,6 +36,22 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub no_color: bool,
 
+    /// Output machine-readable JSON
+    #[arg(long, global = true)]
+    pub json: bool,
+
+    /// Output plain text without ANSI formatting
+    #[arg(long, global = true)]
+    pub plain: bool,
+
+    /// Enable detailed debug output
+    #[arg(long, global = true)]
+    pub debug: bool,
+
+    /// Suppress startup banner
+    #[arg(long, global = true)]
+    pub no_banner: bool,
+
     /// Verbose output (stackable: -v, -vv, -vvv)
     #[arg(short, long, global = true, action = clap::ArgAction::Count)]
     pub verbose: u8,

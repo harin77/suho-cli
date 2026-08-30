@@ -34,18 +34,31 @@ class PathValidator:
             if not self._looks_like_path(key, value):
                 continue
 
-            # Check traversal
-            for pattern in TRAVERSAL_PATTERNS:
+            # Check sensitive system patterns
+            sensitive_patterns = [
+                "/etc/shadow", "/etc/passwd", "/etc/sudoers",
+                "/proc/", "/sys/", "~/.ssh/", "~/.gnupg/", "~/.aws/credentials", "/root/"
+            ]
+            for pattern in sensitive_patterns:
                 if pattern in value:
-                    return False, [
-                        f"Path traversal detected in '{key}': '{pattern}' found in '{value[:80]}'"
-                    ]
+                    return False, [f"Access to sensitive path pattern '{pattern}' is blocked"]
 
-            # Warn if path escapes CWD (not blocking, just flag)
+            # Resolve path relative to CWD to check traversal
             try:
-                abs_path = Path(value).expanduser().resolve()
                 abs_cwd = Path(cwd).resolve()
-                if not str(abs_path).startswith(str(abs_cwd)):
+                path_obj = Path(value).expanduser()
+                is_abs = path_obj.is_absolute() or value.startswith("/") or value.startswith("\\") or value.startswith("~")
+                if is_abs:
+                    abs_path = path_obj.resolve() if path_obj.is_absolute() else Path(value).resolve()
+                else:
+                    abs_path = (abs_cwd / path_obj).resolve()
+
+                has_traversal_str = "../" in value or "..\\" in value
+                is_outside = not str(abs_path).startswith(str(abs_cwd))
+
+                if has_traversal_str or (is_outside and not is_abs):
+                    return False, [f"Path traversal detected in '{key}': '{value}' escapes working directory '{abs_cwd}'"]
+                elif is_outside and is_abs:
                     issues.append(f"Path '{value}' is outside working directory")
             except Exception:
                 pass

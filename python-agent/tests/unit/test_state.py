@@ -67,3 +67,33 @@ class TestTaskState:
         assert "task_id" in summary
         assert "status" in summary
         assert summary["iterations"] == 0
+
+
+from suho_agent.agent.loop import _try_detect_fast_path
+
+
+class TestFastPathDetection:
+    def test_file_creation(self):
+        res = _try_detect_fast_path("create hello.txt", "/tmp")
+        assert res is not None
+        assert res["tool"] == "filesystem.write_file"
+        assert res["args"]["path"] == "hello.txt"
+
+        res2 = _try_detect_fast_path("create styles.css inside test-app", "/tmp")
+        assert res2 is not None
+        assert res2["tool"] == "filesystem.write_file"
+        assert res2["args"]["path"] == "test-app/styles.css"
+
+    def test_directory_creation(self):
+        res = _try_detect_fast_path("create a folder called test-folder", "/tmp")
+        assert res is not None
+        assert res["tool"] == "filesystem.create_directory"
+        assert res["args"]["path"] == "test-folder"
+
+        res2 = _try_detect_fast_path("mkdir assets", "/tmp")
+        assert res2 is not None
+        assert res2["tool"] == "filesystem.create_directory"
+
+    def test_ambiguous_creation(self):
+        res = _try_detect_fast_path("create test-folder", "/tmp")
+        assert res is None

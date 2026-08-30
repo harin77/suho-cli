@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import signal
 import sys
 
 import structlog
+
+# Force UTF-8 streams on Windows to prevent 'charmap' codec errors
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+    sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8", errors="replace")
 
 from suho_agent.config import AgentConfig
 from suho_agent.ipc.bridge import IPCBridge

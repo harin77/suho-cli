@@ -261,9 +261,13 @@ pub enum FileOperation {
 /// Token usage for a task
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TokenUsage {
+    #[serde(default)]
     pub input_tokens: u64,
+    #[serde(default)]
     pub output_tokens: u64,
+    #[serde(default)]
     pub total_tokens: u64,
+    #[serde(default)]
     pub estimated_cost_usd: Option<f64>,
 }
 

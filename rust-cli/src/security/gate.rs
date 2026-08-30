@@ -7,7 +7,7 @@
 //!   Python side REQUESTS. Rust side ENFORCES.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tokio::sync::RwLock;
 
 use crate::config::{Config, SecurityConfig};

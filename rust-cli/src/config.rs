@@ -90,20 +90,7 @@ pub struct MemoryConfig {
     pub max_longterm_entries: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct UiConfig {
-    /// "default", "minimal", "rich"
-    pub theme: String,
-    /// Show token usage in UI
-    pub show_token_usage: bool,
-    /// Show timing information
-    pub show_timing: bool,
-    /// Show tool execution details
-    pub show_tool_details: bool,
-    /// Max lines to show in terminal output preview
-    pub max_preview_lines: usize,
-}
+// UiConfig defined below
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -187,6 +174,21 @@ impl Default for MemoryConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct UiConfig {
+    pub theme: String,
+    pub show_token_usage: bool,
+    pub show_timing: bool,
+    pub show_tool_details: bool,
+    pub max_preview_lines: usize,
+    pub json: bool,
+    pub plain: bool,
+    pub debug: bool,
+    pub no_color: bool,
+    pub no_banner: bool,
+}
+
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
@@ -195,6 +197,11 @@ impl Default for UiConfig {
             show_timing: true,
             show_tool_details: true,
             max_preview_lines: 50,
+            json: false,
+            plain: false,
+            debug: false,
+            no_color: false,
+            no_banner: false,
         }
     }
 }
@@ -211,7 +218,50 @@ impl Default for LoggingConfig {
 
 // ─── Loading ─────────────────────────────────────────────────────────────────
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedConversation {
+    pub id: String,
+    pub title: String,
+    pub cwd: String,
+    pub model: String,
+    pub timestamp: String,
+    pub initial_request: String,
+}
+
 impl Config {
+    pub fn conversations_path() -> Result<PathBuf> {
+        let config_dir = dirs::config_dir()
+            .ok_or_else(|| anyhow::anyhow!("Cannot determine config directory"))?;
+        let dir = config_dir.join("suho");
+        std::fs::create_dir_all(&dir)?;
+        Ok(dir.join("conversations.json"))
+    }
+
+    pub fn load_conversations() -> Vec<SavedConversation> {
+        if let Ok(path) = Self::conversations_path() {
+            if let Ok(content) = std::fs::read_to_string(path) {
+                if let Ok(list) = serde_json::from_str::<Vec<SavedConversation>>(&content) {
+                    return list;
+                }
+            }
+        }
+        Vec::new()
+    }
+
+    pub fn save_conversation(entry: SavedConversation) {
+        let mut list = Self::load_conversations();
+        list.retain(|item| item.id != entry.id);
+        list.insert(0, entry);
+        if list.len() > 50 {
+            list.truncate(50);
+        }
+        if let Ok(path) = Self::conversations_path() {
+            if let Ok(json) = serde_json::to_string_pretty(&list) {
+                let _ = std::fs::write(path, json);
+            }
+        }
+    }
+
     /// Returns the default config file path: ~/.config/suho/config.toml
     pub fn config_path() -> Result<PathBuf> {
         let config_dir = dirs::config_dir()
