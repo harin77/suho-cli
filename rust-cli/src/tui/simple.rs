@@ -686,7 +686,7 @@ async fn handle_models_menu(bridge: &mut AgentBridge) -> Result<()> {
         "5" => ("deepseek", Some("https://api.deepseek.com/v1"), "deepseek-chat", true),
         "6" => ("openrouter", Some("https://openrouter.ai/api/v1"), "auto", true),
         "7" => ("together", Some("https://api.together.xyz/v1"), "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo", true),
-        "8" => ("gemini", Some("https://generativelanguage.googleapis.com/v1beta/openai/"), "gemini-2.5-flash", true),
+        "8" => ("gemini", Some("https://generativelanguage.googleapis.com/v1beta/openai/"), "gemini-2.0-flash", true),
         "9" => ("lmstudio", Some("http://localhost:1234/v1"), "local-model", false),
         _ => ("ollama", Some("http://localhost:11434"), "llama3.2", false),
     };

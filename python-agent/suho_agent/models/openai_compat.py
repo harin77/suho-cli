@@ -30,6 +30,8 @@ class OpenAICompatProvider(LLMProvider):
         timeout: int = 120,
         temperature: float = 0.1,
     ) -> None:
+        if model == "gemini-2.5-flash":
+            model = "gemini-2.0-flash"
         self.model = model
         self.temperature = temperature
 
@@ -197,9 +199,10 @@ class OpenAICompatProvider(LLMProvider):
                     if r.status_code == 200:
                         data = r.json()
                         models = []
+                        deprecated = {"gemini-2.5-flash", "gemini-2.5-flash-preview-tts"}
                         for m in data.get("models", []):
                             raw_name = m.get("name", "").replace("models/", "")
-                            if raw_name:
+                            if raw_name and raw_name not in deprecated and "embed" not in raw_name and "bison" not in raw_name and "imagen" not in raw_name:
                                 models.append(ModelInfo(name=raw_name, provider="gemini", available=True))
                         if models:
                             return models
