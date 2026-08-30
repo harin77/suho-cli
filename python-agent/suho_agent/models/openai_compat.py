@@ -165,7 +165,7 @@ class OpenAICompatProvider(LLMProvider):
             api_key = self._client.api_key
             url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
             try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
+                async with httpx.AsyncClient(timeout=6.0) as client:
                     r = await client.get(url)
                     if r.status_code == 200:
                         data = r.json()
@@ -180,7 +180,8 @@ class OpenAICompatProvider(LLMProvider):
                 log.warning("Failed to fetch live Gemini models from Google API", error=str(e))
 
         try:
-            resp = await self._client.models.list()
+            import asyncio
+            resp = await asyncio.wait_for(self._client.models.list(), timeout=6.0)
             return [
                 ModelInfo(name=m.id, provider="openai_compat", available=True)
                 for m in resp.data

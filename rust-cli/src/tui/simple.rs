@@ -663,16 +663,21 @@ async fn handle_select_model(bridge: &mut AgentBridge) -> Result<()> {
     // Fetch models from provider via Python agent
     let mut available_list: Vec<String> = Vec::new();
     println!("{}Fetching models from provider...{}", DIM, RESET);
-    bridge.send(&CliMessage::ListModels).await?;
-
-    if let Some(AgentMessage::QueryResponse { data, .. }) = bridge.recv_timeout(std::time::Duration::from_secs(5)).await? {
-        if let Some(models) = data.get("models").and_then(|m| m.as_array()) {
-            for m in models {
-                if let Some(name) = m.get("name").and_then(|n| n.as_str()) {
-                    if !available_list.contains(&name.to_string()) {
-                        available_list.push(name.to_string());
+    if let Ok(_) = bridge.send(&CliMessage::ListModels).await {
+        match bridge.recv_timeout(std::time::Duration::from_secs(12)).await {
+            Ok(Some(AgentMessage::QueryResponse { data, .. })) => {
+                if let Some(models) = data.get("models").and_then(|m| m.as_array()) {
+                    for m in models {
+                        if let Some(name) = m.get("name").and_then(|n| n.as_str()) {
+                            if !available_list.contains(&name.to_string()) {
+                                available_list.push(name.to_string());
+                            }
+                        }
                     }
                 }
+            }
+            _ => {
+                println!("{}Could not fetch live API model list, showing standard provider models.{}", DIM, RESET);
             }
         }
     }
