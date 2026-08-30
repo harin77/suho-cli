@@ -258,7 +258,21 @@ impl Config {
         }
 
         let content = toml::to_string_pretty(self)?;
-        tokio::fs::write(&path, content).await?;
+        tokio::fs::write(&path, &content).await?;
+
+        // Also sync to ~/.config/suho/config.toml if on Windows/Posix home
+        if override_path.is_none() {
+            if let Some(home) = dirs::home_dir() {
+                let alt_path = home.join(".config").join("suho").join("config.toml");
+                if alt_path != path {
+                    if let Some(parent) = alt_path.parent() {
+                        let _ = tokio::fs::create_dir_all(parent).await;
+                    }
+                    let _ = tokio::fs::write(&alt_path, &content).await;
+                }
+            }
+        }
+
         Ok(())
     }
 

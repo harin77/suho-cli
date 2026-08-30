@@ -66,28 +66,40 @@ class AgentConfig(BaseModel):
 
     @classmethod
     def load(cls, config_path: Optional[Path] = None) -> "AgentConfig":
-        """Load config from TOML file, falling back to defaults."""
-        if config_path is None:
-            config_dir = Path.home() / ".config" / "suho"
-            config_path = config_dir / "config.toml"
+        """Load config from TOML file, searching standard locations."""
+        if config_path is not None:
+            candidates = [config_path]
+        else:
+            candidates = []
+            if sys.platform == "win32" and "APPDATA" in os.environ:
+                candidates.append(Path(os.environ["APPDATA"]) / "suho" / "config.toml")
+            candidates.append(Path.home() / "AppData" / "Roaming" / "suho" / "config.toml")
+            candidates.append(Path.home() / ".config" / "suho" / "config.toml")
+            candidates.append(Path.home() / ".suho" / "config.toml")
 
-        if not config_path.exists():
-            log.debug("Config not found, using defaults", path=str(config_path))
+        target_file = None
+        for p in candidates:
+            if p.exists():
+                target_file = p
+                break
+
+        if target_file is None:
+            log.debug("Config file not found in candidates, using default settings", candidates=[str(c) for c in candidates])
             return cls()
 
         try:
             if sys.version_info >= (3, 11):
                 import tomllib
-                with open(config_path, "rb") as f:
+                with open(target_file, "rb") as f:
                     data = tomllib.load(f)
             else:
                 import tomli
-                with open(config_path, "rb") as f:
+                with open(target_file, "rb") as f:
                     data = tomli.load(f)
 
             return cls.model_validate(data)
         except Exception as e:
-            log.warning("Config parse error, using defaults", error=str(e))
+            log.warning("Config parse error, using defaults", path=str(target_file), error=str(e))
             return cls()
 
     def get_api_key(self) -> Optional[str]:
