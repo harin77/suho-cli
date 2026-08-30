@@ -78,6 +78,9 @@ class AgentRuntime:
 
     async def _dispatch(self, msg: CliMessage) -> None:
         """Route incoming message to the correct handler."""
+        # Always reload config from disk
+        self.config = AgentConfig.load()
+
         match msg:
             case TaskRequestMessage():
                 await self._handle_task(msg)

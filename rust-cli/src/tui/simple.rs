@@ -112,10 +112,20 @@ pub async fn run_simple_interactive(
                             }
                         }
 
-                        if input == "exit" || input == "quit" { break; }
+                        let mut task_prompt = input.clone();
+                        for prefix in &["suho run ", "suho ask ", "suho plan ", "suho "] {
+                            if task_prompt.to_lowercase().starts_with(prefix) {
+                                task_prompt = task_prompt[prefix.len()..].trim().to_string();
+                            }
+                        }
+                        if task_prompt.starts_with('"') && task_prompt.ends_with('"') && task_prompt.len() >= 2 {
+                            task_prompt = task_prompt[1..task_prompt.len()-1].to_string();
+                        }
+
+                        if task_prompt == "exit" || task_prompt == "quit" { break; }
 
                         let task_id = uuid::Uuid::new_v4().to_string();
-                        handle_task(&mut bridge, &gate, &executor, &config, &cwd, input, task_id).await?;
+                        handle_task(&mut bridge, &gate, &executor, &config, &cwd, task_prompt, task_id).await?;
                     }
                     Err(e) => {
                         eprintln!("Input error: {}", e);
@@ -601,7 +611,7 @@ async fn handle_models_menu(bridge: &mut AgentBridge) -> Result<()> {
         "5" => ("deepseek", Some("https://api.deepseek.com/v1"), "deepseek-chat", true),
         "6" => ("openrouter", Some("https://openrouter.ai/api/v1"), "auto", true),
         "7" => ("together", Some("https://api.together.xyz/v1"), "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo", true),
-        "8" => ("gemini", Some("https://generativelanguage.googleapis.com/v1beta/openai/"), "gemini-1.5-flash", true),
+        "8" => ("gemini", Some("https://generativelanguage.googleapis.com/v1beta/openai/"), "gemini-2.5-flash", true),
         "9" => ("lmstudio", Some("http://localhost:1234/v1"), "local-model", false),
         _ => ("ollama", Some("http://localhost:11434"), "llama3.2", false),
     };

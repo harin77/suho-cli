@@ -31,7 +31,7 @@ PROVIDER_DEFAULT_MODELS = {
     "openrouter": "auto",
     "together": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
     "lmstudio": "local-model",
-    "gemini": "gemini-1.5-flash",
+    "gemini": "gemini-2.5-flash",
 }
 
 
@@ -44,8 +44,8 @@ class ModelRouter:
 
     async def get_provider(self) -> LLMProvider:
         """Get the active LLM provider, with health-check and fallback."""
-        if self._provider is not None:
-            return self._provider
+        # Always reload config from disk to catch runtime changes from /models menu
+        self.config = AgentConfig.load()
 
         provider = await self._create_provider(self.config.model.provider)
         if provider and await provider.health_check():
