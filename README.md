@@ -1,48 +1,139 @@
-# SUHO Agent
+# SUHO Agent 🤖⚡
 
-**Terminal-first autonomous AI agent for developers.**
+**Terminal-first, autonomous AI agent ecosystem built for software engineers, Linux sysadmins, and AI developers.**
 
-SUHO Agent understands your goals, plans actions, uses tools, executes work, detects mistakes, corrects them, and verifies the result — all from your terminal.
+SUHO Agent understands your goal, creates structured execution plans, invokes built-in developer tools, runs shell commands, verifies code output, auto-corrects mistakes, and manages persistent memory — all directly from your terminal.
 
-```
-> suho run "Fix my Flutter build"
+```text
+╔══════════════════════════════════════════╗
+║           SUHO Agent  v0.2.0             ║
+╚══════════════════════════════════════════╝
 
-🧠 Planning...
-  1. Inspect project
-  2. Run flutter analyze
-  3. Diagnose errors
-  4. Apply fixes
-  5. Run tests
-  6. Verify build
+Interactive mode — type your request. Ctrl+C to exit.
+Working directory: D:\workspace\suho-cli
 
-⚡ filesystem.list_directory  ✓ (12ms)
-⚡ terminal.execute           → flutter analyze
-⚡ filesystem.read_file       → pubspec.yaml ✓
-⚡ filesystem.edit_file       → pubspec.yaml ✓
-⚡ terminal.execute           → flutter test ✓
-⚡ terminal.execute           → flutter build apk ✓
-
-✓ Task Complete
-Build fixed. Updated pubspec.yaml dependency constraints.
-Changed: pubspec.yaml
-Tool calls: 6  Tokens: 2,341  Time: 8,432ms
+> /models
+> Fix my Flutter build and run unit tests
 ```
 
 ---
 
-## Architecture
+## 🚀 Quick Start — Windows Installation
 
+### Option 1: Pre-Compiled Release (Fastest)
+
+1. **Download**: Download [`suho-v0.2.0-windows-x64.zip`](https://github.com/harin77/suho-cli/releases/download/v0.2.0/suho-v0.2.0-windows-x64.zip) from [GitHub Releases](https://github.com/harin77/suho-cli/releases/tag/v0.2.0).
+2. **Extract**: Right-click `.zip` → **Extract All...**.
+3. **Install**: Double-click **`install.bat`** inside the extracted folder.
+   - *Installs `suho.exe` to `%USERPROFILE%\.suho\bin`*
+   - *Adds install path to User `PATH`*
+   - *Creates default configuration at `%USERPROFILE%\.config\suho\config.toml`*
+4. **Open Terminal**: Open a **NEW** PowerShell window and test:
+   ```powershell
+   # If running in current window without opening a new one, run this first:
+   $env:Path += ";$env:USERPROFILE\.suho\bin"
+
+   suho doctor
+   suho chat
+   ```
+
+---
+
+## 🎮 Interactive CLI Guide
+
+Enter interactive CLI mode by running:
+
+```powershell
+suho chat
+# or simply:
+suho
 ```
+
+### Slash Commands in Interactive Mode
+
+Inside `suho chat`, start commands with `/`:
+
+| Command | Description |
+|:---|:---|
+| **`/models`** | Open interactive menu to select LLM provider (Ollama, OpenAI, Anthropic, Groq, DeepSeek, OpenRouter, Together, Gemini, LM Studio), enter API key, save to config, and list all available models! |
+| **`/help`** | Display detailed interactive help menu, supported providers, and CLI options |
+| **`/tools`** | List all 30+ built-in developer tools and their availability status |
+| **`/history`** | Show recent task execution history |
+| **`/status`** | Show agent runtime health, active model, memory status, and uptime |
+| **`/clear`** | Clear the terminal screen |
+| **`/exit`** | Exit interactive session (or press `Ctrl+C`) |
+
+---
+
+## 🌐 Supported LLM Providers
+
+SUHO Agent supports 9+ cloud and local LLM providers out-of-the-box:
+
+| Provider | Type | Default Model | Base URL / Notes |
+|:---|:---|:---|:---|
+| **Ollama** | Local (Free) | `llama3.2` | `http://localhost:11434` |
+| **OpenAI** | Cloud | `gpt-4o-mini` | `https://api.openai.com/v1` |
+| **Anthropic** | Cloud | `claude-3-5-sonnet-20241022` | Direct Messages API |
+| **Groq** | Cloud | `llama-3.3-70b-versatile` | Ultra-fast inference (`https://api.groq.com/openai/v1`) |
+| **DeepSeek** | Cloud | `deepseek-chat` | `https://api.deepseek.com/v1` |
+| **OpenRouter** | Cloud Router | `auto` | `https://openrouter.ai/api/v1` |
+| **Together AI** | Cloud | `meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo` | `https://api.together.xyz/v1` |
+| **Google Gemini** | Cloud | `gemini-1.5-flash` | `https://generativelanguage.googleapis.com/v1beta/openai/` |
+| **LM Studio** | Local (Free) | `local-model` | `http://localhost:1234/v1` |
+
+### Setting up a Provider
+
+Simply run **`/models`** inside `suho chat` to select your provider, type your API key (if required), and click save. The settings are saved automatically to `~/.config/suho/config.toml`.
+
+---
+
+## 🛠️ CLI Subcommands Overview
+
+Run these commands directly from your terminal outside interactive mode:
+
+```bash
+# Execute task autonomously
+suho run "Fix Flutter build and run tests"
+
+# Preview planned actions without executing
+suho run --dry-run "Clean build target"
+
+# Autonomous mode (minimal prompts)
+suho run --auto "Check Rust project with clippy"
+
+# Generate structured execution plan only
+suho plan "Implement user authentication module"
+
+# Direct Q&A (no tool calls)
+suho ask "Explain Rust ownership and borrowing"
+
+# Run system diagnostics
+suho doctor
+
+# List long-term stored memories
+suho memory list
+
+# Search memories by keyword
+suho memory search "database"
+
+# Resume last incomplete session
+suho resume
+```
+
+---
+
+## 🏗️ Architecture & Security
+
+SUHO Agent uses a strict **two-tier architecture**:
+
+```text
 USER → Rust CLI/TUI → [IPC] → Python Agent Runtime
                                   ├── Context Manager
                                   ├── Planner (LLM)
                                   ├── LLM Router
-                                  ├── State
-                                  └── Memory
+                                  └── Memory (SQLite)
                                ↓
-                          Tool Router
-                               ↓
-                          Policy Engine (advisory)
+                          Policy Engine (5-Layer Advisory)
                                ↓
                     Rust Security Gate (FINAL AUTHORITY)
                                ↓
@@ -50,169 +141,51 @@ USER → Rust CLI/TUI → [IPC] → Python Agent Runtime
                       ┌─────┼──────┐
                   Files  Terminal  Git
                                ↓
-                         Observation
-                               ↓
-                        Verification
-                          ↙       ↘
-                        PASS     FAIL → REPLAN
+                          Verification
 ```
 
-**Separation axioms:**
-- `TUI ≠ Agent` — Rust renders, Python reasons
-- `Agent ≠ Tools` — Agent selects tools, Executor runs them
-- `Tools ≠ Security` — Tools request, SecurityGate enforces
-- `LLM ≠ Agent` — LLM is the reasoning component, not the runtime
+1. **Rust CLI & SecurityGate (Binding Authority)**: Rust acts as the final gatekeeper. Even if the Python runtime requests tool execution, Rust independently verifies path safety, injection patterns, and session permissions before running commands.
+2. **Python Agent Runtime (Reasoning & Tools)**: Handles LLM communications, prompt assembly, token budgeting, multi-step planning, and 30+ built-in developer tools (`filesystem.*`, `git.*`, `development.*`, `system.*`, `terminal.*`).
 
 ---
 
-## Installation
+## 🔧 Building from Source
 
 ### Prerequisites
+- **Rust 1.80+**: `rustup`
+- **Python 3.12+**: `uv` recommended
 
-- Rust 1.80+ (`rustup`)
-- Python 3.12+ (`uv` recommended)
-- Ollama (for local models) or OpenAI API key
+### Build Instructions
 
-### Build
-
-```bash
-git clone https://github.com/suho-ai/suho-cli
+```powershell
+# 1. Clone repository
+git clone https://github.com/harin77/suho-cli.git
 cd suho-cli
 
-# Build Rust CLI
-cargo build --release
-
-# Install Python agent dependencies
+# 2. Install Python agent dependencies
 cd python-agent
-uv sync
+uv sync --extra dev
+cd ..
 
-# Copy default config
+# 3. Build Rust CLI release binary
+cargo build --release --manifest-path rust-cli/Cargo.toml -j 1
+
+# 4. Copy default config
 mkdir -p ~/.config/suho
 cp configs/default.toml ~/.config/suho/config.toml
 ```
 
-### Quick Start
+---
 
-```bash
-# Run with Ollama (local)
-ollama pull llama3.2
-suho doctor          # check everything is working
-suho chat            # start interactive session
-```
+## 📜 License
+
+Distributed under the **MIT License**. See [LICENSE](LICENSE) for details.
 
 ---
 
-## Commands
+## 🙌 Credits & Acknowledgments
 
-| Command | Description |
-|---------|-------------|
-| `suho` / `suho chat` | Interactive chat session |
-| `suho run "task"` | Execute a task autonomously |
-| `suho run --dry-run "task"` | Show planned actions, don't execute |
-| `suho run --auto "task"` | Autonomous mode (minimal interruption) |
-| `suho plan "task"` | Generate plan without executing |
-| `suho ask "question"` | Direct LLM answer (no tools) |
-| `suho tools` | List available tools |
-| `suho memory list` | List stored memories |
-| `suho config show` | Show current configuration |
-| `suho doctor` | System diagnostics |
-| `suho history` | Task history |
-| `suho resume` | Resume last session |
-| `suho models` | List available LLM models |
-
----
-
-## LLM Providers
-
-### Ollama (default, local)
-
-```toml
-[model]
-provider = "ollama"
-model = "llama3.2"
-api_base = "http://localhost:11434"
-```
-
-### OpenAI
-
-```toml
-[model]
-provider = "openai"
-model = "gpt-4o-mini"
-api_key_env = "OPENAI_API_KEY"
-```
-
-### OpenAI-compatible (LM Studio, vLLM)
-
-```toml
-[model]
-provider = "openai_compat"
-model = "your-model"
-api_base = "http://localhost:1234/v1"
-```
-
----
-
-## Security
-
-SUHO uses a **two-layer security architecture**:
-
-1. **Python PolicyEngine** (advisory) — 5-layer validation:
-   - Schema validation
-   - Path traversal detection
-   - Shell token analysis
-   - Pattern classification (SAFE/MODERATE/DANGEROUS/CRITICAL)
-   - Session-level policy
-
-2. **Rust SecurityGate** (final authority) — Rust independently validates and makes the binding decision. Python's assessment is advisory only.
-
-Permission levels:
-- **SAFE** — auto-allowed (read-only operations, analysis)
-- **MODERATE** — auto-allowed by default (configurable)
-- **DANGEROUS** — always prompts user
-- **CRITICAL** — always prompts; can be auto-denied in config
-
----
-
-## Supported Project Types
-
-- **Flutter/Dart** — analyze, test, build, format
-- **Rust/Cargo** — check, test, build, clippy
-- **Python** — pytest, pip, run
-- **Node.js/npm** — install, test, run
-- **Unity** — detected (specialized tools coming in V0.4)
-
----
-
-## Project Structure
-
-```
-suho-cli/
-├── rust-cli/          # Rust: CLI, TUI, SecurityGate, Executor
-├── python-agent/      # Python: Agent, LLM, Tools, Memory
-├── configs/           # Default configuration
-├── docs/              # Documentation
-└── plugins/           # Plugin directory (V0.7)
-```
-
----
-
-## Roadmap
-
-| Version | Features |
-|---------|----------|
-| V0.1 | CLI, LLM, Agent Loop, Tools, Permissions ✓ |
-| V0.2 | Planning, Verification, Memory, Git |
-| V0.3 | Security hardening, Sandbox |
-| V0.4 | Developer tools (Flutter, Rust, Node, Unity) |
-| V0.5 | Advanced memory, sessions |
-| V0.6 | Web, Docker, SSH tools |
-| V0.7 | Plugin system |
-| V0.8 | MCP compatibility |
-| V1.0 | Stable production release |
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE)
+- **Core Maintainer & Lead Architect**: **Harin & SUHO AI Team** ([@harin77](https://github.com/harin77))
+- **Built With**:
+  - **Rust**: [`clap`](https://github.com/clap-rs/clap), [`tokio`](https://github.com/tokio-rs/tokio), [`ratatui`](https://github.com/ratatui-org/ratatui), [`serde`](https://github.com/serde-rs/serde)
+  - **Python**: [`pydantic`](https://github.com/pydantic/pydantic), [`structlog`](https://github.com/hynek/structlog), [`httpx`](https://github.com/encode/httpx), [`aiosqlite`](https://github.com/omnilib/aiosqlite)
