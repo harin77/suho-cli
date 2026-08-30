@@ -34,12 +34,15 @@ impl AgentBridge {
 
     /// Spawn the Python agent subprocess
     pub async fn start(&mut self) -> Result<()> {
+        let agent_dir = self.find_agent_dir()?;
         let (cmd, args) = self.resolve_python_command()?;
 
         tracing::debug!("Spawning agent: {} {:?}", cmd, args);
 
         let mut child = Command::new(&cmd)
             .args(&args)
+            .current_dir(&agent_dir)
+            .env("PYTHONPATH", &agent_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped()) // Pipe Python stderr to prevent terminal bleeding
@@ -203,10 +206,25 @@ impl AgentBridge {
             ));
         }
 
-        // Auto-detect: look for python-agent directory relative to binary
+        // Auto-detect: look for python-agent directory relative to binary or home
         let agent_dir = self.find_agent_dir()?;
 
-        // Use `uv run` if available (preferred — handles virtualenv automatically)
+        // 1. Check if virtualenv exists inside agent_dir (.venv/Scripts/python.exe or .venv/bin/python)
+        let venv_python = if cfg!(target_os = "windows") {
+            agent_dir.join(".venv").join("Scripts").join("python.exe")
+        } else {
+            agent_dir.join(".venv").join("bin").join("python")
+        };
+
+        if venv_python.exists() {
+            tracing::debug!("Using virtualenv Python at {:?}", venv_python);
+            return Ok((
+                venv_python.to_string_lossy().to_string(),
+                vec!["-m".to_string(), "suho_agent.main".to_string()],
+            ));
+        }
+
+        // 2. Use `uv run` if available (handles virtualenv dynamically)
         if which_available("uv") {
             return Ok((
                 "uv".to_string(),
@@ -221,7 +239,7 @@ impl AgentBridge {
             ));
         }
 
-        // Fallback: direct python / python3
+        // 3. Fallback: direct python / python3
         let python_cmd = if cfg!(target_os = "windows") { "python" } else { "python3" };
         Ok((
             python_cmd.to_string(),
