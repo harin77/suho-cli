@@ -471,22 +471,42 @@ async fn execute_tool(
     };
 
     match tool {
-        "terminal.execute" | "terminal.execute_command" => {
+        "terminal.execute" | "terminal.execute_command" | "terminal.run" | "shell.execute" => {
             let command = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
             let cwd_override = args.get("cwd").and_then(|v| v.as_str());
             let effective_cwd = cwd_override.unwrap_or(cwd.to_str().unwrap_or("."));
             executor.execute_command(command, Some(effective_cwd), args.get("env"), constraints.timeout_ms, &sandbox_cfg).await
         }
 
-        "filesystem.read_file" => {
+        "filesystem.read_file" | "filesystem.read" => {
             let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
             executor.read_file(path, config.security.max_file_read_bytes).await
         }
 
-        "filesystem.write_file" => {
+        "filesystem.write_file" | "filesystem.create_file" | "filesystem.edit_file" | "filesystem.write" | "filesystem.create" => {
             let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
             let content = args.get("content").and_then(|v| v.as_str()).unwrap_or("");
             executor.write_file(path, content, config.security.max_file_write_bytes).await
+        }
+
+        "filesystem.delete_file" | "filesystem.remove_file" => {
+            let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            let command = if cfg!(target_os = "windows") {
+                format!("del /f /q \"{}\"", path)
+            } else {
+                format!("rm -f \"{}\"", path)
+            };
+            executor.execute_command(&command, Some(cwd.to_str().unwrap_or(".")), None, constraints.timeout_ms, &sandbox_cfg).await
+        }
+
+        "filesystem.list_directory" | "filesystem.list_dir" => {
+            let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+            let command = if cfg!(target_os = "windows") {
+                format!("dir /b \"{}\"", path)
+            } else {
+                format!("ls -la \"{}\"", path)
+            };
+            executor.execute_command(&command, Some(cwd.to_str().unwrap_or(".")), None, constraints.timeout_ms, &sandbox_cfg).await
         }
 
         _ => {
