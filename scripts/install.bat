@@ -17,6 +17,7 @@ if not exist "%AGENT_DIR%" mkdir "%AGENT_DIR%"
 if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%"
 
 echo [2/4] Installing suho binary and python agent runtime...
+taskkill /F /IM suho.exe >nul 2>&1
 if exist "suho.exe" (
     copy /Y "suho.exe" "%INSTALL_DIR%\suho.exe" >nul
     echo [OK] Installed suho.exe to %INSTALL_DIR%
