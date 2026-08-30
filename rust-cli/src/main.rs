@@ -20,5 +20,8 @@ async fn main() -> Result<()> {
         .compact()
         .init();
 
+    #[cfg(target_os = "windows")]
+    let _ = crossterm::ansi_support::supports_ansi();
+
     cli::run().await
 }
