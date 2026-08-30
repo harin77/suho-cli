@@ -1,0 +1,96 @@
+[project]
+name = "suho-agent"
+version = "0.1.0"
+description = "SUHO Agent — Python agent runtime"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+
+dependencies = [
+    # HTTP / LLM clients
+    "httpx>=0.27",
+    "openai>=1.40",
+
+    # Data validation
+    "pydantic>=2.8",
+    "pydantic-settings>=2.4",
+
+    # Async
+    "anyio>=4.4",
+
+    # CLI / output (used by Python agent for dev mode)
+    "rich>=13.7",
+    "typer>=0.12",
+
+    # SQLite ORM
+    "aiosqlite>=0.20",
+
+    # Embeddings (optional, for RAG in later versions)
+    # "sentence-transformers>=3.0",
+
+    # Git
+    "gitpython>=3.1",
+
+    # Diff / patch
+    "unidiff>=0.7",
+
+    # TOML config
+    "tomli>=2.0; python_version < '3.11'",
+
+    # Logging
+    "structlog>=24.4",
+
+    # Shell parsing (for command analysis)
+    "bashlex>=0.18",
+
+    # Secret detection
+    "detect-secrets>=1.5",
+
+    # Tiktoken for token counting (OpenAI compatible)
+    "tiktoken>=0.7",
+
+    # Process management
+    "psutil>=6.0",
+
+    # UUID
+    "uuid7>=0.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "mypy>=1.11",
+    "ruff>=0.6",
+    "respx>=0.21",   # HTTP mocking
+    "pytest-mock>=3.14",
+]
+
+[project.scripts]
+suho-agent = "suho_agent.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["suho_agent"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM"]
+ignore = ["B008"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-v --tb=short"

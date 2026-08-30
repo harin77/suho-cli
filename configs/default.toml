@@ -1,0 +1,46 @@
+# SUHO Agent — Default Configuration
+# Copy to ~/.config/suho/config.toml and customize
+
+[agent]
+max_iterations = 30
+max_tool_calls = 100
+timeout_secs = 300
+max_retries = 3
+max_output_bytes = 1048576  # 1 MB
+
+[model]
+provider = "ollama"         # "ollama", "openai", "openai_compat"
+model = "llama3.2"
+api_base = "http://localhost:11434"
+# api_key_env = "OPENAI_API_KEY"   # env var name, never store key directly
+request_timeout_secs = 120
+max_context_tokens = 8192
+temperature = 0.1
+
+[security]
+sandbox = false
+sandbox_backend = "none"    # "none", "firejail", "bubblewrap", "docker"
+confirm_moderate = false    # prompt for MODERATE operations
+confirm_dangerous = true    # always prompt for DANGEROUS (cannot disable)
+auto_deny_critical = false  # auto-deny CRITICAL without prompting
+redact_secrets = true
+max_file_read_bytes = 10485760   # 10 MB
+max_file_write_bytes = 5242880   # 5 MB
+
+[memory]
+enabled = true
+# db_path = "~/.local/share/suho/memory.db"  # default
+max_working_entries = 100
+max_longterm_entries = 1000
+
+[ui]
+theme = "default"
+show_token_usage = true
+show_timing = true
+show_tool_details = true
+max_preview_lines = 50
+
+[logging]
+level = "info"              # debug, info, warn, error
+# log_file = "~/.local/share/suho/suho.log"
+json_format = false

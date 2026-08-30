@@ -1,0 +1,29 @@
+# Rust
+/target
+/target_build
+Cargo.lock
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# SUHO local data
+*.db
+*.log
+.config/
+
+# IDE / System
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
