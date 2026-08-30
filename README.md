@@ -26,6 +26,7 @@ Working directory: D:\workspace\suho-cli
 2. **Extract**: Right-click `.zip` -> **Extract All...**.
 3. **Install**: Double-click `install.bat` inside the extracted folder.
    - Installs `suho.exe` to `%USERPROFILE%\.suho\bin`
+   - Installs `python-agent` runtime and `requirements.txt` dependencies to `%USERPROFILE%\.suho\python-agent`
    - Adds install path to User `PATH`
    - Creates default configuration at `%USERPROFILE%\.config\suho\config.toml`
 4. **Open Terminal**: Open a **NEW** PowerShell window and test:
