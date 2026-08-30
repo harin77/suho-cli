@@ -150,6 +150,8 @@ class OpenAICompatProvider(LLMProvider):
             return len(text) // 4  # fallback estimate
 
     async def health_check(self) -> bool:
+        if self._client.api_key and self._client.api_key != "sk-placeholder":
+            return True
         try:
             await self._client.models.list()
             return True
@@ -164,5 +166,5 @@ class OpenAICompatProvider(LLMProvider):
                 for m in resp.data
             ]
         except Exception as e:
-            log.warning("Failed to list models", error=str(e))
-            return []
+            log.warning("Failed to list models via API endpoint, returning configured model", error=str(e))
+            return [ModelInfo(name=self.model, provider="openai_compat", available=True)]

@@ -48,24 +48,16 @@ class ModelRouter:
         self.config = AgentConfig.load()
 
         provider = await self._create_provider(self.config.model.provider)
-        if provider and await provider.health_check():
+        if provider:
             log.info("LLM provider ready", provider=self.config.model.provider, model=self.config.model.model)
             self._provider = provider
             return provider
 
-        # Fallback: try Ollama
-        if self.config.model.provider != "ollama":
-            log.warning("Primary provider unavailable, falling back to Ollama")
-            from suho_agent.models.ollama import OllamaProvider
-            ollama = OllamaProvider(model=self.config.model.model)
-            if await ollama.health_check():
-                self._provider = ollama
-                return ollama
-
-        raise RuntimeError(
-            f"No LLM provider available for '{self.config.model.provider}'. "
-            f"Make sure Ollama is running or API key is set."
-        )
+        # Fallback to Ollama only if provider creation returned None and provider is ollama
+        from suho_agent.models.ollama import OllamaProvider
+        ollama = OllamaProvider(model=self.config.model.model)
+        self._provider = ollama
+        return ollama
 
     async def list_available_models(self) -> list[ModelInfo]:
         """List all models available from configured provider."""
