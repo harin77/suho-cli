@@ -94,17 +94,26 @@ class OpenAICompatProvider(LLMProvider):
             for t in tools
         ]
 
-        try:
-            resp = await self._client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                tools=openai_tools,
-                tool_choice="auto",
-                temperature=temperature,
-            )
-        except (APIConnectionError, APIStatusError) as e:
-            log.error("Tool call failed", error=str(e))
-            raise
+        resp = None
+        for attempt in range(3):
+            try:
+                resp = await self._client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    tools=openai_tools,
+                    tool_choice="auto",
+                    temperature=temperature,
+                )
+                break
+            except Exception as e:
+                err_str = str(e)
+                if ("429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower()) and attempt < 2:
+                    log.warning("Rate limit / quota hit, waiting 6s before retry...", attempt=attempt + 1, error=err_str[:150])
+                    import asyncio
+                    await asyncio.sleep(6.0 * (attempt + 1))
+                else:
+                    log.error("Tool call failed", error=err_str)
+                    raise
 
         choice = resp.choices[0]
         message = choice.message
