@@ -11,17 +11,32 @@ from suho_agent.models.base import LLMProvider, ModelInfo
 
 log = structlog.get_logger(__name__)
 
+# Standard base URLs for OpenAI-compatible providers
+PROVIDER_BASE_URLS = {
+    "openai": "https://api.openai.com/v1",
+    "groq": "https://api.groq.com/openai/v1",
+    "deepseek": "https://api.deepseek.com/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "together": "https://api.together.xyz/v1",
+    "lmstudio": "http://localhost:1234/v1",
+    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
+}
+
+PROVIDER_DEFAULT_MODELS = {
+    "ollama": "llama3.2",
+    "openai": "gpt-4o-mini",
+    "anthropic": "claude-3-5-sonnet-20241022",
+    "groq": "llama-3.3-70b-versatile",
+    "deepseek": "deepseek-chat",
+    "openrouter": "auto",
+    "together": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+    "lmstudio": "local-model",
+    "gemini": "gemini-1.5-flash",
+}
+
 
 class ModelRouter:
-    """
-    Selects and instantiates the appropriate LLM provider.
-
-    Priority:
-    1. Config-specified provider
-    2. Ollama if running locally
-    3. OpenAI-compat if API key present
-    4. Error if none available
-    """
+    """Selects and instantiates the appropriate LLM provider."""
 
     def __init__(self, config: AgentConfig) -> None:
         self.config = config
@@ -48,8 +63,7 @@ class ModelRouter:
                 return ollama
 
         raise RuntimeError(
-            f"No LLM provider available. "
-            f"Configured: {self.config.model.provider}. "
+            f"No LLM provider available for '{self.config.model.provider}'. "
             f"Make sure Ollama is running or API key is set."
         )
 
@@ -64,27 +78,41 @@ class ModelRouter:
 
     async def _create_provider(self, provider_name: str) -> Optional[LLMProvider]:
         cfg = self.config.model
+        provider_name = provider_name.lower().strip()
 
         if provider_name == "ollama":
             from suho_agent.models.ollama import OllamaProvider
             return OllamaProvider(
-                model=cfg.model,
+                model=cfg.model or PROVIDER_DEFAULT_MODELS["ollama"],
                 base_url=cfg.api_base or "http://localhost:11434",
                 timeout=cfg.request_timeout_secs,
                 temperature=cfg.temperature,
             )
 
-        if provider_name in ("openai", "openai_compat"):
+        if provider_name == "anthropic":
             api_key = self.config.get_api_key()
-            if not api_key and provider_name == "openai":
-                log.warning("No API key found for OpenAI provider")
+            if not api_key:
+                log.warning("No API key found for Anthropic provider")
                 return None
+            from suho_agent.models.anthropic import AnthropicProvider
+            return AnthropicProvider(
+                model=cfg.model or PROVIDER_DEFAULT_MODELS["anthropic"],
+                api_key=api_key,
+                timeout=cfg.request_timeout_secs,
+                temperature=cfg.temperature,
+            )
+
+        # OpenAI-compatible providers
+        if provider_name in PROVIDER_BASE_URLS or provider_name == "openai_compat":
+            api_key = self.config.get_api_key()
+            base_url = cfg.api_base or PROVIDER_BASE_URLS.get(provider_name)
+            model = cfg.model or PROVIDER_DEFAULT_MODELS.get(provider_name, "gpt-4o-mini")
 
             from suho_agent.models.openai_compat import OpenAICompatProvider
             return OpenAICompatProvider(
-                model=cfg.model,
-                api_key=api_key,
-                base_url=cfg.api_base if provider_name == "openai_compat" else None,
+                model=model,
+                api_key=api_key or "sk-placeholder",
+                base_url=base_url,
                 timeout=cfg.request_timeout_secs,
                 temperature=cfg.temperature,
             )

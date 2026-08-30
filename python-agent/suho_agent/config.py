@@ -31,6 +31,7 @@ class ModelSection(BaseModel):
     provider: str = "ollama"
     model: str = "llama3.2"
     api_base: Optional[str] = "http://localhost:11434"
+    api_key: Optional[str] = None
     api_key_env: Optional[str] = None
     request_timeout_secs: int = 120
     max_context_tokens: int = 8192
@@ -90,11 +91,22 @@ class AgentConfig(BaseModel):
             return cls()
 
     def get_api_key(self) -> Optional[str]:
-        """Retrieve API key from environment variable (never from config file)."""
+        """Retrieve API key from config or environment variable."""
+        if self.model.api_key:
+            return self.model.api_key
         if self.model.api_key_env:
             return os.environ.get(self.model.api_key_env)
-        # Common environment variables
-        for env_var in ["OPENAI_API_KEY", "SUHO_API_KEY"]:
+        # Common environment variables per provider
+        env_map = {
+            "openai": ["OPENAI_API_KEY"],
+            "anthropic": ["ANTHROPIC_API_KEY"],
+            "groq": ["GROQ_API_KEY"],
+            "deepseek": ["DEEPSEEK_API_KEY"],
+            "openrouter": ["OPENROUTER_API_KEY"],
+            "together": ["TOGETHER_API_KEY"],
+            "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+        }
+        for env_var in env_map.get(self.model.provider.lower(), ["OPENAI_API_KEY", "SUHO_API_KEY"]):
             val = os.environ.get(env_var)
             if val:
                 return val

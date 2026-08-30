@@ -103,6 +103,15 @@ pub async fn run_simple_interactive(
                     Ok(_) => {
                         let input = line.trim().to_string();
                         if input.is_empty() { continue; }
+
+                        // Slash command handling
+                        if input.starts_with('/') {
+                            let handled = handle_slash_command(&mut bridge, &input).await?;
+                            if handled {
+                                continue;
+                            }
+                        }
+
                         if input == "exit" || input == "quit" { break; }
 
                         let task_id = uuid::Uuid::new_v4().to_string();
@@ -476,6 +485,178 @@ async fn execute_tool(
             executor.execute_command(command, Some(cwd.to_str().unwrap_or(".")), None, constraints.timeout_ms, &sandbox_cfg).await
         }
     }
+}
+
+/// Handle interactive slash commands starting with '/'
+pub async fn handle_slash_command(bridge: &mut AgentBridge, cmd: &str) -> Result<bool> {
+    let parts: Vec<&str> = cmd.split_whitespace().collect();
+    let command = parts[0].to_lowercase();
+
+    match command.as_str() {
+        "/help" | "/h" => {
+            print_slash_help();
+            Ok(true)
+        }
+
+        "/models" | "/model" | "/m" => {
+            handle_models_menu(bridge).await?;
+            Ok(true)
+        }
+
+        "/clear" | "/cls" => {
+            print!("\x1B[2J\x1B[1;1H");
+            io::stdout().flush()?;
+            Ok(true)
+        }
+
+        "/tools" | "/t" => {
+            bridge.send(&CliMessage::ListTools { verbose: false, category: None }).await?;
+            if let Some(AgentMessage::QueryResponse { data, .. }) = bridge.recv_timeout(std::time::Duration::from_secs(10)).await? {
+                println!("{}", serde_json::to_string_pretty(&data)?);
+            }
+            Ok(true)
+        }
+
+        "/history" => {
+            bridge.send(&CliMessage::History { limit: 10 }).await?;
+            if let Some(AgentMessage::QueryResponse { data, .. }) = bridge.recv_timeout(std::time::Duration::from_secs(10)).await? {
+                println!("{}", serde_json::to_string_pretty(&data)?);
+            }
+            Ok(true)
+        }
+
+        "/status" | "/s" => {
+            bridge.send(&CliMessage::Status).await?;
+            if let Some(AgentMessage::QueryResponse { data, .. }) = bridge.recv_timeout(std::time::Duration::from_secs(10)).await? {
+                println!("{}", serde_json::to_string_pretty(&data)?);
+            }
+            Ok(true)
+        }
+
+        "/exit" | "/quit" | "/q" => {
+            println!("Goodbye!");
+            std::process::exit(0);
+        }
+
+        _ => {
+            println!("{}Unknown slash command '{}'. Type /help for assistance.{}", YELLOW, cmd, RESET);
+            Ok(true)
+        }
+    }
+}
+
+fn print_slash_help() {
+    println!("\n{}{}╔════ SUHO Agent — Interactive Slash Commands ═══════════╗{}", BOLD, CYAN, RESET);
+    println!("  {}/models{}   — Interactive menu to select LLM provider & API key, and list available models", BOLD, RESET);
+    println!("  {}/tools{}    — List all 30+ built-in tools and availability", BOLD, RESET);
+    println!("  {}/history{}  — Show recent task history", BOLD, RESET);
+    println!("  {}/status{}   — Show agent runtime status & active model", BOLD, RESET);
+    println!("  {}/clear{}    — Clear the terminal screen", BOLD, RESET);
+    println!("  {}/help{}     — Show this help menu", BOLD, RESET);
+    println!("  {}/exit{}     — Exit interactive mode\n", BOLD, RESET);
+
+    println!("{}{}Supported Providers in /models:{}", BOLD, BLUE, RESET);
+    println!("  • Ollama (local: http://localhost:11434)");
+    println!("  • OpenAI (GPT-4o, GPT-4o-mini)");
+    println!("  • Anthropic (Claude-3.5-Sonnet, Claude-3.5-Haiku)");
+    println!("  • Groq (Llama-3.3-70b)");
+    println!("  • DeepSeek (deepseek-chat, deepseek-coder)");
+    println!("  • OpenRouter (universal API router)");
+    println!("  • Together AI (Meta-Llama-3.1)");
+    println!("  • Google Gemini (Gemini-1.5-Flash)");
+    println!("  • LM Studio (local: http://localhost:1234/v1)");
+
+    println!("\n{}{}CLI Subcommands (outside interactive mode):{}", BOLD, BLUE, RESET);
+    println!("  suho run \"task\"             — Execute task autonomously");
+    println!("  suho run --dry-run \"task\"   — View planned actions without executing");
+    println!("  suho plan \"task\"            — Generate execution plan only");
+    println!("  suho ask \"question\"         — Direct LLM answer without tools");
+    println!("  suho doctor                 — Run system diagnostics");
+    println!("  suho memory list            — View long-term stored memories");
+    println!("  suho resume                 — Resume last session\n");
+}
+
+async fn handle_models_menu(bridge: &mut AgentBridge) -> Result<()> {
+    println!("\n{}{}╔══ LLM Provider & Model Configuration ══════════════════╗{}", BOLD, BLUE, RESET);
+    println!("  [1] Ollama (Local default)");
+    println!("  [2] OpenAI");
+    println!("  [3] Anthropic (Claude)");
+    println!("  [4] Groq (Ultra-fast inference)");
+    println!("  [5] DeepSeek");
+    println!("  [6] OpenRouter");
+    println!("  [7] Together AI");
+    println!("  [8] Google Gemini");
+    println!("  [9] LM Studio (Local server)");
+    print!("{}{}Select provider [1-9]: {}", BOLD, RESET, RESET);
+    io::stdout().flush()?;
+
+    let mut choice = String::new();
+    io::stdin().read_line(&mut choice)?;
+    let choice = choice.trim();
+
+    let (provider, default_base, default_model, needs_key) = match choice {
+        "2" => ("openai", Some("https://api.openai.com/v1"), "gpt-4o-mini", true),
+        "3" => ("anthropic", None, "claude-3-5-sonnet-20241022", true),
+        "4" => ("groq", Some("https://api.groq.com/openai/v1"), "llama-3.3-70b-versatile", true),
+        "5" => ("deepseek", Some("https://api.deepseek.com/v1"), "deepseek-chat", true),
+        "6" => ("openrouter", Some("https://openrouter.ai/api/v1"), "auto", true),
+        "7" => ("together", Some("https://api.together.xyz/v1"), "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo", true),
+        "8" => ("gemini", Some("https://generativelanguage.googleapis.com/v1beta/openai/"), "gemini-1.5-flash", true),
+        "9" => ("lmstudio", Some("http://localhost:1234/v1"), "local-model", false),
+        _ => ("ollama", Some("http://localhost:11434"), "llama3.2", false),
+    };
+
+    let mut api_key: Option<String> = None;
+    if needs_key {
+        print!("{}Enter API key for {} (or press Enter to skip): {}", BOLD, provider, RESET);
+        io::stdout().flush()?;
+        let mut key_in = String::new();
+        io::stdin().read_line(&mut key_in)?;
+        let key_in = key_in.trim();
+        if !key_in.is_empty() {
+            api_key = Some(key_in.to_string());
+        }
+    }
+
+    print!("{}Enter model name [default: {}]: {}", BOLD, default_model, RESET);
+    io::stdout().flush()?;
+    let mut model_in = String::new();
+    io::stdin().read_line(&mut model_in)?;
+    let model_in = model_in.trim();
+    let model = if model_in.is_empty() { default_model } else { model_in };
+
+    // Save to ~/.config/suho/config.toml
+    let mut config = Config::load(None).await.unwrap_or_default();
+    config.model.provider = provider.to_string();
+    config.model.model = model.to_string();
+    if let Some(base) = default_base {
+        config.model.api_base = Some(base.to_string());
+    }
+    if let Some(key) = api_key {
+        config.model.api_key = Some(key);
+    }
+    config.save(None).await?;
+
+    println!("\n{}{}✓ Configuration updated & saved to ~/.config/suho/config.toml{}", BOLD, GREEN, RESET);
+    println!("  Provider: {}{}{}", CYAN, provider, RESET);
+    println!("  Model: {}{}{}", CYAN, model, RESET);
+
+    // List available models from API
+    println!("\n{}Fetching available models from provider...{}", DIM, RESET);
+    bridge.send(&CliMessage::ListModels).await?;
+
+    if let Some(AgentMessage::QueryResponse { data, .. }) = bridge.recv_timeout(std::time::Duration::from_secs(10)).await? {
+        if let Some(models) = data.get("models").and_then(|m| m.as_array()) {
+            println!("\n{}{}Available Models ({}) for {}:{}", BOLD, GREEN, models.len(), provider, RESET);
+            for m in models.iter().take(20) {
+                if let Some(name) = m.get("name").and_then(|n| n.as_str()) {
+                    println!("  • {}{}{}", CYAN, name, RESET);
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Placeholder — in production the bridge carries the config

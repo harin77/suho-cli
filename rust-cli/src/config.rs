@@ -36,13 +36,15 @@ pub struct AgentConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ModelConfig {
-    /// LLM provider: "ollama", "openai", "openai_compat"
+    /// LLM provider: "ollama", "openai", "anthropic", "groq", "deepseek", "openrouter", "together", "gemini", "lmstudio"
     pub provider: String,
-    /// Model name (e.g. "llama3.2", "gpt-4o-mini")
+    /// Model name (e.g. "llama3.2", "gpt-4o-mini", "claude-3-5-sonnet-20241022")
     pub model: String,
-    /// API base URL (for openai_compat)
+    /// API base URL
     pub api_base: Option<String>,
-    /// API key env var name (never stored directly)
+    /// Stored API key
+    pub api_key: Option<String>,
+    /// API key env var name
     pub api_key_env: Option<String>,
     /// Request timeout in seconds
     pub request_timeout_secs: u64,
@@ -149,6 +151,7 @@ impl Default for ModelConfig {
             provider: "ollama".to_string(),
             model: "llama3.2".to_string(),
             api_base: Some("http://localhost:11434".to_string()),
+            api_key: None,
             api_key_env: None,
             request_timeout_secs: 120,
             max_context_tokens: 8192,
