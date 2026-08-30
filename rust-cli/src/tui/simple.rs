@@ -508,8 +508,13 @@ pub async fn handle_slash_command(bridge: &mut AgentBridge, cmd: &str) -> Result
             Ok(true)
         }
 
-        "/models" | "/model" | "/m" => {
+        "/models" | "/providers" | "/provider" => {
             handle_models_menu(bridge).await?;
+            Ok(true)
+        }
+
+        "/selectmodel" | "/model" | "/m" => {
+            handle_select_model(bridge).await?;
             Ok(true)
         }
 
@@ -557,15 +562,16 @@ pub async fn handle_slash_command(bridge: &mut AgentBridge, cmd: &str) -> Result
 
 fn print_slash_help() {
     println!("\n{}{}╔════ SUHO Agent — Interactive Slash Commands ═══════════╗{}", BOLD, CYAN, RESET);
-    println!("  {}/models{}   — Interactive menu to select LLM provider & API key, and list available models", BOLD, RESET);
-    println!("  {}/tools{}    — List all 30+ built-in tools and availability", BOLD, RESET);
-    println!("  {}/history{}  — Show recent task history", BOLD, RESET);
-    println!("  {}/status{}   — Show agent runtime status & active model", BOLD, RESET);
-    println!("  {}/clear{}    — Clear the terminal screen", BOLD, RESET);
-    println!("  {}/help{}     — Show this help menu", BOLD, RESET);
-    println!("  {}/exit{}     — Exit interactive mode\n", BOLD, RESET);
+    println!("  {}/models{}      — Select LLM Provider & enter API key", BOLD, RESET);
+    println!("  {}/selectmodel{} — Pick active LLM model for current provider", BOLD, RESET);
+    println!("  {}/tools{}       — List all 30+ built-in tools and availability", BOLD, RESET);
+    println!("  {}/history{}     — Show recent task history", BOLD, RESET);
+    println!("  {}/status{}      — Show agent runtime status & active model", BOLD, RESET);
+    println!("  {}/clear{}       — Clear the terminal screen", BOLD, RESET);
+    println!("  {}/help{}        — Show this help menu", BOLD, RESET);
+    println!("  {}/exit{}        — Exit interactive mode\n", BOLD, RESET);
 
-    println!("{}{}Supported Providers in /models:{}", BOLD, BLUE, RESET);
+    println!("{}{}Supported Providers:{}", BOLD, BLUE, RESET);
     println!("  • Ollama (local: http://localhost:11434)");
     println!("  • OpenAI (GPT-4o, GPT-4o-mini)");
     println!("  • Anthropic (Claude-3.5-Sonnet, Claude-3.5-Haiku)");
@@ -573,7 +579,7 @@ fn print_slash_help() {
     println!("  • DeepSeek (deepseek-chat, deepseek-coder)");
     println!("  • OpenRouter (universal API router)");
     println!("  • Together AI (Meta-Llama-3.1)");
-    println!("  • Google Gemini (Gemini-1.5-Flash)");
+    println!("  • Google Gemini (Gemini-2.5-Flash)");
     println!("  • LM Studio (local: http://localhost:1234/v1)");
 
     println!("\n{}{}CLI Subcommands (outside interactive mode):{}", BOLD, BLUE, RESET);
@@ -587,7 +593,7 @@ fn print_slash_help() {
 }
 
 async fn handle_models_menu(bridge: &mut AgentBridge) -> Result<()> {
-    println!("\n{}{}╔══ LLM Provider & Model Configuration ══════════════════╗{}", BOLD, BLUE, RESET);
+    println!("\n{}{}╔══ LLM Provider Configuration ═════════════════════════╗{}", BOLD, BLUE, RESET);
     println!("  [1] Ollama (Local default)");
     println!("  [2] OpenAI");
     println!("  [3] Anthropic (Claude)");
@@ -628,17 +634,10 @@ async fn handle_models_menu(bridge: &mut AgentBridge) -> Result<()> {
         }
     }
 
-    print!("{}Enter model name [default: {}]: {}", BOLD, default_model, RESET);
-    io::stdout().flush()?;
-    let mut model_in = String::new();
-    io::stdin().read_line(&mut model_in)?;
-    let model_in = model_in.trim();
-    let model = if model_in.is_empty() { default_model } else { model_in };
-
     // Save to ~/.config/suho/config.toml
     let mut config = Config::load(None).await.unwrap_or_default();
     config.model.provider = provider.to_string();
-    config.model.model = model.to_string();
+    config.model.model = default_model.to_string();
     if let Some(base) = default_base {
         config.model.api_base = Some(base.to_string());
     }
@@ -647,24 +646,87 @@ async fn handle_models_menu(bridge: &mut AgentBridge) -> Result<()> {
     }
     config.save(None).await?;
 
-    println!("\n{}{}✓ Configuration updated & saved to ~/.config/suho/config.toml{}", BOLD, GREEN, RESET);
+    println!("\n{}{}✓ Provider updated & saved to ~/.config/suho/config.toml{}", BOLD, GREEN, RESET);
     println!("  Provider: {}{}{}", CYAN, provider, RESET);
-    println!("  Model: {}{}{}", CYAN, model, RESET);
+    println!("  Default Model: {}{}{}", CYAN, default_model, RESET);
+    println!("\n{}Type {}/selectmodel{} to pick a specific model for this provider!{}\n", DIM, BOLD, RESET, RESET);
 
-    // List available models from API
-    println!("\n{}Fetching available models from provider...{}", DIM, RESET);
+    Ok(())
+}
+
+async fn handle_select_model(bridge: &mut AgentBridge) -> Result<()> {
+    let mut config = Config::load(None).await.unwrap_or_default();
+    let provider = config.model.provider.clone();
+
+    println!("\n{}{}╔══ Select Model for Provider [{}] ═════════════════════╗{}", BOLD, BLUE, provider, RESET);
+
+    // Fetch models from provider via Python agent
+    let mut available_list: Vec<String> = Vec::new();
+    println!("{}Fetching models from provider...{}", DIM, RESET);
     bridge.send(&CliMessage::ListModels).await?;
 
-    if let Some(AgentMessage::QueryResponse { data, .. }) = bridge.recv_timeout(std::time::Duration::from_secs(10)).await? {
+    if let Some(AgentMessage::QueryResponse { data, .. }) = bridge.recv_timeout(std::time::Duration::from_secs(5)).await? {
         if let Some(models) = data.get("models").and_then(|m| m.as_array()) {
-            println!("\n{}{}Available Models ({}) for {}:{}", BOLD, GREEN, models.len(), provider, RESET);
-            for m in models.iter().take(20) {
+            for m in models {
                 if let Some(name) = m.get("name").and_then(|n| n.as_str()) {
-                    println!("  • {}{}{}", CYAN, name, RESET);
+                    if !available_list.contains(&name.to_string()) {
+                        available_list.push(name.to_string());
+                    }
                 }
             }
         }
     }
+
+    // Add standard preset models per provider if not already present
+    let presets: Vec<&str> = match provider.as_str() {
+        "gemini" => vec!["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash", "gemini-1.5-pro"],
+        "openai" => vec!["gpt-4o-mini", "gpt-4o", "o1-mini", "o1"],
+        "anthropic" => vec!["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
+        "groq" => vec!["llama-3.3-70b-versatile", "mixtral-8x7b-32768", "gemma2-9b-it"],
+        "deepseek" => vec!["deepseek-chat", "deepseek-reasoner"],
+        "openrouter" => vec!["auto", "anthropic/claude-3.5-sonnet", "google/gemini-2.5-flash", "deepseek/deepseek-r1"],
+        "together" => vec!["meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo", "Qwen/Qwen2.5-Coder-32B-Instruct"],
+        "lmstudio" => vec!["local-model"],
+        _ => vec!["llama3.2", "qwen2.5-coder", "deepseek-r1"],
+    };
+
+    for p in presets {
+        if !available_list.contains(&p.to_string()) {
+            available_list.push(p.to_string());
+        }
+    }
+
+    // Display numbered list
+    for (idx, name) in available_list.iter().enumerate() {
+        let active = if name == &config.model.model { format!(" {}[ACTIVE]{}", GREEN, RESET) } else { String::new() };
+        println!("  [{}] {}{}{}", idx + 1, CYAN, name, active);
+    }
+
+    print!("\n{}{}Select model [1-{}] or enter custom model name: {}", BOLD, RESET, available_list.len(), RESET);
+    io::stdout().flush()?;
+
+    let mut model_in = String::new();
+    io::stdin().read_line(&mut model_in)?;
+    let model_in = model_in.trim();
+
+    let selected_model = if let Ok(num) = model_in.parse::<usize>() {
+        if num >= 1 && num <= available_list.len() {
+            available_list[num - 1].clone()
+        } else {
+            model_in.to_string()
+        }
+    } else if !model_in.is_empty() {
+        model_in.to_string()
+    } else {
+        config.model.model.clone()
+    };
+
+    config.model.model = selected_model.clone();
+    config.save(None).await?;
+
+    println!("\n{}{}✓ Active model updated & saved to ~/.config/suho/config.toml{}", BOLD, GREEN, RESET);
+    println!("  Provider: {}{}{}", CYAN, provider, RESET);
+    println!("  Active Model: {}{}{}\n", CYAN, selected_model, RESET);
 
     Ok(())
 }
