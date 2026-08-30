@@ -19,6 +19,7 @@ class ToolCallResponse(BaseModel):
     tool: str
     args: dict[str, Any]
     content: Optional[str] = None  # any text alongside the tool call
+    reasoning: Optional[str] = None  # thinking/reasoning model output
     input_tokens: int = 0
     output_tokens: int = 0
 

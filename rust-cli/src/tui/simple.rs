@@ -268,7 +268,11 @@ async fn handle_agent_message(
         }
 
         AgentMessage::Thinking { content, .. } => {
-            println!("{}  🧠 {}{}", DIM, content, RESET);
+            println!("\n{}🧠 Thinking Mode:{}", BOLD, CYAN);
+            for line in content.lines() {
+                println!("  {}{}{}", DIM, line, RESET);
+            }
+            let _ = io::stdout().flush();
             Ok(false)
         }
 

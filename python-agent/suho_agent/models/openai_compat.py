@@ -109,6 +109,14 @@ class OpenAICompatProvider(LLMProvider):
         choice = resp.choices[0]
         message = choice.message
 
+        reasoning = getattr(message, "reasoning_content", None) or getattr(message, "reasoning", None)
+        raw_content = message.content or ""
+        if not reasoning and "<think>" in raw_content:
+            import re
+            m = re.search(r"<think>(.*?)</think>", raw_content, re.DOTALL)
+            if m:
+                reasoning = m.group(1).strip()
+
         if message.tool_calls:
             tc = message.tool_calls[0]
             import json
@@ -122,6 +130,7 @@ class OpenAICompatProvider(LLMProvider):
                 tool=tc.function.name,
                 args=args,
                 content=message.content,
+                reasoning=reasoning,
                 input_tokens=resp.usage.prompt_tokens if resp.usage else 0,
                 output_tokens=resp.usage.completion_tokens if resp.usage else 0,
             )
@@ -135,6 +144,7 @@ class OpenAICompatProvider(LLMProvider):
                     tool="__complete__",
                     args={},
                     content=message.content,
+                    reasoning=reasoning,
                     input_tokens=resp.usage.prompt_tokens if resp.usage else 0,
                     output_tokens=resp.usage.completion_tokens if resp.usage else 0,
                 )

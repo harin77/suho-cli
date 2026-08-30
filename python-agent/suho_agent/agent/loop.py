@@ -105,6 +105,14 @@ class AgentLoop:
                 # LLM says task is complete
                 break
 
+            reasoning = getattr(action, "reasoning", None)
+            if reasoning:
+                from suho_agent.ipc.protocol import ThinkingMessage
+                await self.bridge.send(ThinkingMessage(
+                    task_id=self.state.task_id,
+                    content=reasoning,
+                ))
+
             tool_name = action.tool if hasattr(action, "tool") else action.get("tool", "")
             tool_args = action.args if hasattr(action, "args") else action.get("args", {})
             description = (action.content if hasattr(action, "content") else action.get("description")) or f"Execute {tool_name}"
@@ -367,14 +375,14 @@ class AgentLoop:
                 self.state.add_error(e)
 
     def _generate_summary(self) -> str:
-        summary_parts = [f"Task: {self.state.user_request}"]
+        summary_parts = [f"Successfully completed: {self.state.user_request}"]
         if self.state.files_changed:
             summary_parts.append(
-                f"Modified {len(self.state.files_changed)} file(s): "
+                f"Updated {len(self.state.files_changed)} file(s): "
                 + ", ".join(f.path for f in self.state.files_changed[:5])
             )
         summary_parts.append(
-            f"Completed in {self.state.iteration_count} iteration(s) with {self.state.tool_call_count} tool call(s)."
+            f"Executed in {self.state.iteration_count} iteration(s) using {self.state.tool_call_count} tool call(s)."
         )
         return "\n".join(summary_parts)
 
