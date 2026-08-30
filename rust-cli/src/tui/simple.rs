@@ -513,6 +513,51 @@ async fn execute_tool(
             executor.execute_command(&command, Some(cwd.to_str().unwrap_or(".")), None, constraints.timeout_ms, &sandbox_cfg).await
         }
 
+        "filesystem.find_files" => {
+            let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+            let pattern = args.get("pattern").and_then(|v| v.as_str()).unwrap_or("*");
+            let command = if cfg!(target_os = "windows") {
+                format!("dir /b /s \"{}\\{}\"", path, pattern)
+            } else {
+                format!("find \"{}\" -name \"{}\"", path, pattern)
+            };
+            executor.execute_command(&command, Some(cwd.to_str().unwrap_or(".")), None, constraints.timeout_ms, &sandbox_cfg).await
+        }
+
+        "filesystem.search_files" => {
+            let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+            let pattern = args.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
+            let file_pattern = args.get("file_pattern").and_then(|v| v.as_str()).unwrap_or("*");
+            let command = if cfg!(target_os = "windows") {
+                format!("findstr /s /i /n \"{}\" \"{}\\{}\"", pattern, path, file_pattern)
+            } else {
+                format!("grep -rn \"{}\" \"{}\"", pattern, path)
+            };
+            executor.execute_command(&command, Some(cwd.to_str().unwrap_or(".")), None, constraints.timeout_ms, &sandbox_cfg).await
+        }
+
+        "filesystem.move_file" => {
+            let src = args.get("source").and_then(|v| v.as_str()).unwrap_or("");
+            let dst = args.get("destination").and_then(|v| v.as_str()).unwrap_or("");
+            let command = if cfg!(target_os = "windows") {
+                format!("move /y \"{}\" \"{}\"", src, dst)
+            } else {
+                format!("mv -f \"{}\" \"{}\"", src, dst)
+            };
+            executor.execute_command(&command, Some(cwd.to_str().unwrap_or(".")), None, constraints.timeout_ms, &sandbox_cfg).await
+        }
+
+        "filesystem.copy_file" => {
+            let src = args.get("source").and_then(|v| v.as_str()).unwrap_or("");
+            let dst = args.get("destination").and_then(|v| v.as_str()).unwrap_or("");
+            let command = if cfg!(target_os = "windows") {
+                format!("copy /y \"{}\" \"{}\"", src, dst)
+            } else {
+                format!("cp -f \"{}\" \"{}\"", src, dst)
+            };
+            executor.execute_command(&command, Some(cwd.to_str().unwrap_or(".")), None, constraints.timeout_ms, &sandbox_cfg).await
+        }
+
         _ => {
             // Unknown tool — treat as terminal command
             let command = args.get("command").and_then(|v| v.as_str()).unwrap_or(tool);
